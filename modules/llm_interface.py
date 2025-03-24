@@ -32,8 +32,9 @@ import json
 from typing import Optional
 
 class DeepSeekLLM:
-    def __init__(self, api_key: str = "sk-49595a75d01f4f4895486ca24dd4130b"):
-        self.api_key = api_key
+    def __init__(self):
+        load_dotenv()
+        self.api_key = os.getenv("DEEPSEEK_API_KEY")
         self.base_url = "https://api.deepseek.com/v1/chat/completions"
         self.headers = {
             "Content-Type": "application/json",

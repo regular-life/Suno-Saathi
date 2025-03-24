@@ -1,6 +1,6 @@
 import time
 from modules.wake_word import WakeWordDetector
-from modules.llm_interface import TinyLlamaLLM
+from modules.llm_interface import *
 from modules.navigation import get_route_info
 
 def main():
@@ -14,11 +14,13 @@ def main():
 
     # Initialize
     detector = WakeWordDetector()
-    llm = TinyLlamaLLM()
+    # llm = TinyLlamaLLM()
+    # llm = DeepSeekLLM()
+    llm = GeminiLLM()
 
     conversation_context = (
         "You are Suno Saarthi, a helpful AI co-passenger in the Indian context.\n"
-        "You can mix English and Hindi. Provide route guidance and answer driver queries.\n\n"
+        "You can mix English and Hindi. Provide route guidance and answer driver queries.\n"
     )
 
     standby = True
@@ -70,7 +72,7 @@ def main():
 
                 # 2c. Otherwise, pass to LLM for conversation
                 conversation_prompt = conversation_context + f"User: {recognized_text}\nSaarthi:"
-                reply = llm.generate_reply(conversation_prompt, max_new_tokens=60)
+                reply = llm.generate_reply(conversation_prompt, max_new_tokens=100)
                 print(f"Saarthi: {reply}")
 
                 # Optionally append to conversation_context

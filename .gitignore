@@ -1,3 +1,4 @@
 .hcai/
 trial/
 */__pycache__/
+.env

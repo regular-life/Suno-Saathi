@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suno Saarthi - Voice Navigation</title>
+    <meta name="description" content="A voice-enabled navigation assistant with multilingual support for Indian drivers">
+    <meta name="theme-color" content="#4285F4">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="assets/icons/icon-192x192.png">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet">
+    <!-- Mapbox CSS -->
+    <link href='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css' rel='stylesheet' />
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/voice-modal.css">
+    <link rel="stylesheet" href="css/navigation.css">
+</head>
+<body>
+    <!-- Debug class can be added to troubleshoot layout issues -->
+    <div class="container">
+        <div class="search-bar">
+            <input type="text" id="search-input" placeholder="Search for a location">
+            <button id="search-button"><i class="fas fa-search"></i></button>
+        </div>
+        
+        <div id="map"></div>
+        
+        <div class="controls">
+            <button id="zoom-in"><i class="fas fa-plus"></i></button>
+            <button id="zoom-out"><i class="fas fa-minus"></i></button>
+            <button id="reset-view"><i class="fas fa-home"></i></button>
+        </div>
+        
+        <!-- Directions Panel -->
+        <div class="directions-panel">
+            <div class="directions-header">
+                <h3>Directions</h3>
+                <button id="close-directions" class="close-btn"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="directions-form">
+                <div class="input-group origin">
+                    <i class="fas fa-circle origin-icon"></i>
+                    <input type="text" id="origin-input" placeholder="Starting point (current location)">
+                </div>
+                <div class="input-group destination">
+                    <i class="fas fa-map-marker-alt destination-icon"></i>
+                    <input type="text" id="destination-input" placeholder="Enter destination">
+                </div>
+                <div class="travel-modes">
+                    <button class="travel-mode-btn active" data-mode="driving">
+                        <i class="fas fa-car"></i>
+                        <span>Driving</span>
+                    </button>
+                    <button class="travel-mode-btn" data-mode="walking">
+                        <i class="fas fa-walking"></i>
+                        <span>Walking</span>
+                    </button>
+                    <button class="travel-mode-btn" data-mode="cycling">
+                        <i class="fas fa-bicycle"></i>
+                        <span>Cycling</span>
+                    </button>
+                </div>
+                <button id="get-directions-btn">Get Directions</button>
+            </div>
+            <div class="route-summary" id="route-summary">
+                <!-- Route summary will be added here -->
+            </div>
+            <div class="directions-list" id="directions-list">
+                <!-- Direction steps will be added here -->
+            </div>
+            <button id="start-navigation-btn" class="start-navigation-btn">
+                <i class="fas fa-play-circle"></i> Start Navigation
+            </button>
+        </div>
+    </div>
+    
+    <!-- Voice Recognition Modal -->
+    <div class="voice-modal" id="voiceModal">
+        <div class="voice-modal-content">
+            <button class="close-modal" id="closeModal">&times;</button>
+            
+            <div class="voice-header">
+                <h2>Voice Commands</h2>
+                <p class="voice-status" id="voiceStatus">Listening...</p>
+                <p class="voice-text" id="voiceText"></p>
+            </div>
+            
+            <div class="progress-container">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            
+            <!-- Voice animation will be added here dynamically via JavaScript -->
+            
+            <div class="voice-body">
+                <div class="voice-commands-container">
+                    <h3>Available Commands</h3>
+                    <ul class="voice-commands" id="commandsList">
+                        <!-- Commands will be populated by JavaScript -->
+                    </ul>
+                </div>
+                <p class="waiting-text" id="waitingText">If I didn't catch that, try speaking more clearly...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation Mode UI -->
+    <div class="navigation-mode" id="navigation-mode">
+        <!-- Navigation Header -->
+        <div class="nav-header">
+            <div class="nav-title">Navigation to <span id="nav-destination-display">Destination</span></div>
+            <button class="exit-nav-btn" id="exit-navigation">
+                <i class="fas fa-times"></i> Exit
+            </button>
+        </div>
+        
+        <!-- Route Info -->
+        <div class="route-info">
+            <div class="route-info-item">
+                <div class="info-value" id="nav-distance">0.0 km</div>
+                <div class="info-label">Distance</div>
+            </div>
+            <div class="route-info-item">
+                <div class="info-value" id="nav-duration">0 min</div>
+                <div class="info-label">Estimated Time</div>
+            </div>
+            <div class="route-info-item">
+                <div class="info-value" id="nav-arrival">00:00</div>
+                <div class="info-label">Arrival</div>
+            </div>
+        </div>
+        
+        <!-- Navigation Map -->
+        <div class="nav-map-container">
+            <div id="nav-map" class="nav-map"></div>
+            <div class="maneuver-card">
+                <i class="fas fa-arrow-right maneuver-icon" id="maneuver-icon"></i>
+                <div>
+                    <div class="maneuver-text" id="maneuver-text">Continue straight ahead</div>
+                    <div class="distance-text" id="next-maneuver-distance">300 m</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Gemini Assistant Area -->
+        <div class="assistant-container">
+            <div class="conversation-container" id="conversation-container">
+                <!-- Messages will be added here by JS -->
+                <div class="message assistant">
+                    <div class="message-content">Navigation started. I'll guide you to your destination. Feel free to ask me any questions along the way.</div>
+                    <div class="message-time">Now</div>
+                </div>
+            </div>
+            <div class="input-container">
+                <input type="text" id="assistant-input" placeholder="Ask me anything about your journey...">
+                <button id="mic-nav-btn">
+                    <i class="fas fa-microphone mic-icon"></i>
+                </button>
+                <button id="send-btn">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Navigation Controls -->
+        <div class="nav-controls">
+            <button class="nav-control-btn" id="nav-volume-btn">
+                <i class="fas fa-volume-up"></i>
+            </button>
+            <button class="nav-control-btn" id="nav-recenter-btn">
+                <i class="fas fa-crosshairs"></i>
+            </button>
+            <button class="nav-control-btn" id="nav-overview-btn">
+                <i class="fas fa-route"></i>
+            </button>
+            <button class="nav-control-btn" id="nav-compact-btn">
+                <i class="fas fa-compress-alt"></i>
+            </button>
+        </div>
+        
+        <!-- Compact Navigation Card (Vertical) -->
+        <div class="compact-card" id="compact-nav-card">
+            <div class="go-back-button" id="compact-back-btn">
+                <i class="fas fa-arrow-left"></i>
+            </div>
+            
+            <div class="eta-display">
+                <span class="label">ETA:</span><span id="compact-eta">1h40</span>
+            </div>
+            
+            <div class="direction-arrow">
+                <i class="fas fa-arrow-up" id="compact-direction-icon"></i>
+                <div class="direction-instruction" id="compact-instruction">Stay on the same road</div>
+                <div class="direction-distance" id="compact-distance">3.3km</div>
+            </div>
+            
+            <div class="voice-input-button" id="compact-mic-btn">
+                <i class="fas fa-microphone"></i>
+            </div>
+            <div class="voice-feedback" id="voice-feedback-text">How long should I continue on this road?</div>
+            
+            <div class="next-steps">
+                <div class="step">
+                    <i class="fas fa-arrow-right"></i>
+                    <div class="distance">1.5km</div>
+                </div>
+                <div class="step">
+                    <i class="fas fa-arrow-up"></i>
+                    <div class="distance">3.5km</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Microphone button -->
+    <button id="mic-button">
+        <i class="fas fa-microphone"></i>
+    </button>
+    
+    <!-- Directions button -->
+    <button id="directions-btn" class="directions-btn">
+        <i class="fas fa-directions"></i>
+    </button>
+    
+    <!-- Error message container -->
+    <div id="error-container" style="position:fixed; bottom:10px; left:10px; right:10px; background:rgba(255,255,255,0.8); padding:10px; border-radius:5px; display:none; z-index:1000;">
+        <p id="error-message" style="color:red; font-weight:bold;">No errors detected</p>
+    </div>
+    
+    <!-- Debug Info Panel -->
+    <div id="debug-panel" style="position:fixed; top:10px; right:10px; background:rgba(255,255,255,0.9); padding:10px; border-radius:5px; max-width:300px; max-height:400px; overflow:auto; z-index:2000; display:none;">
+        <h4>Debug Info</h4>
+        <div id="debug-content"></div>
+        <button onclick="document.getElementById('debug-panel').style.display='none'" style="margin-top:10px;">Close</button>
+    </div>
+    
+    <!-- Offline notification -->
+    <div id="offline-notification" style="display: none; position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 10px 20px; border-radius: 5px; z-index: 3000;">
+        You are currently offline. Some features may be limited.
+    </div>
+    
+    <!-- Mapbox JS -->
+    <script src='https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js'></script>
+    
+    <!-- App Scripts -->
+    <script src="js/secrets.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/main.js"></script>
+    <script src="js/voice-recognition.js"></script>
+    <script src="js/directions.js"></script>
+    <script src="js/navigation.js"></script>
+    <script src="js/debug-nav.js"></script>
+    
+    <!-- Service Worker Registration -->
+    <script>
+        // Register Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/js/service-worker.js')
+                    .then(registration => {
+                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                    })
+                    .catch(error => {
+                        console.error('ServiceWorker registration failed: ', error);
+                    });
+            });
+            
+            // Check for offline status
+            window.addEventListener('online', () => {
+                document.getElementById('offline-notification').style.display = 'none';
+            });
+            
+            window.addEventListener('offline', () => {
+                document.getElementById('offline-notification').style.display = 'block';
+            });
+            
+            // Check initial status
+            if (!navigator.onLine) {
+                document.getElementById('offline-notification').style.display = 'block';
+            }
+        }
+    </script>
+    
+    <script>
+        // Check if Mapbox loaded correctly
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                // Display debug panel with key info
+                const debugPanel = document.getElementById('debug-panel');
+                const debugContent = document.getElementById('debug-content');
+                
+                debugPanel.style.display = 'block';
+                
+                // Add debug info
+                let debugInfo = '';
+                debugInfo += '<p><strong>Mapbox Loaded:</strong> ' + (window.mapboxgl ? 'Yes' : 'No') + '</p>';
+                debugInfo += '<p><strong>Map Container Size:</strong> ';
+                
+                const mapEl = document.getElementById('map');
+                if (mapEl) {
+                    debugInfo += mapEl.offsetWidth + 'x' + mapEl.offsetHeight + '</p>';
+                } else {
+                    debugInfo += 'Container not found</p>';
+                }
+                
+                debugInfo += '<p><strong>CSS Loaded:</strong> ' + (document.querySelector('link[href*="style.css"]') ? 'Yes' : 'No') + '</p>';
+                
+                // Check if config is loaded
+                if (window.CONFIG && window.CONFIG.loaded) {
+                    debugInfo += '<p><strong>Config Loaded:</strong> Yes</p>';
+                    if (window.CONFIG.mapboxToken) {
+                        debugInfo += '<p><strong>Mapbox Token:</strong> ' + window.CONFIG.mapboxToken.substring(0, 5) + '...</p>';
+                    } else {
+                        debugInfo += '<p><strong>Mapbox Token:</strong> Not available</p>';
+                    }
+                    
+                    // Show warnings if any
+                    if (window.CONFIG.warnings) {
+                        debugInfo += '<p><strong>Warnings:</strong> ' + window.CONFIG.warnings.message + '</p>';
+                    }
+                } else {
+                    debugInfo += '<p><strong>Config Loaded:</strong> No</p>';
+                    debugInfo += '<p><strong>Reason:</strong> Configuration not yet loaded from backend</p>';
+                }
+                
+                // Display any console errors
+                if (window.mapErrorMessage) {
+                    debugInfo += '<p><strong>Map Error:</strong> ' + window.mapErrorMessage + '</p>';
+                }
+                
+                debugContent.innerHTML = debugInfo;
+                
+                // Check for critical errors
+                if (!window.mapboxgl) {
+                    document.getElementById('error-container').style.display = 'block';
+                    document.getElementById('error-message').textContent = 'Error: Mapbox failed to load. Check your internet connection.';
+                }
+                
+                // Check if map container is visible
+                if (mapEl && (mapEl.offsetHeight === 0 || mapEl.offsetWidth === 0)) {
+                    document.getElementById('error-container').style.display = 'block';
+                    document.getElementById('error-message').textContent = 'Error: Map container has zero dimensions. Check your CSS.';
+                }
+                
+                // Add a close button for debug panel
+                const closeButton = document.createElement('button');
+                closeButton.textContent = 'Close';
+                closeButton.onclick = function() { 
+                    debugPanel.style.display = 'none';
+                };
+                debugContent.appendChild(closeButton);
+            }, 1000);
+        });
+    </script>
+</body>
+</html> 

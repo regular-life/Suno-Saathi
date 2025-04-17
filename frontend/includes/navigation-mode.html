@@ -1,0 +1,67 @@
+<!-- Navigation Mode Screen -->
+<div class="navigation-screen">
+    <!-- Navigation Header -->
+    <div class="nav-header">
+        <button id="exit-nav-btn" class="nav-btn"><i class="fas fa-times"></i></button>
+        <div class="nav-title">
+            <h3 id="destination-title">Navigating to Destination</h3>
+        </div>
+        <div class="nav-actions">
+            <button id="recenter-btn" class="nav-btn"><i class="fas fa-location-arrow"></i></button>
+            <button id="voice-assist-btn" class="nav-btn"><i class="fas fa-microphone"></i></button>
+        </div>
+    </div>
+    
+    <!-- Navigation Map -->
+    <div id="nav-map" class="nav-map"></div>
+    
+    <!-- Navigation Info -->
+    <div class="nav-info">
+        <div class="info-block">
+            <div class="info-label">Distance</div>
+            <div id="distance-remaining" class="info-value">0 km</div>
+        </div>
+        <div class="info-block">
+            <div class="info-label">Time</div>
+            <div id="time-remaining" class="info-value">0 min</div>
+        </div>
+        <div class="info-block">
+            <div class="info-label">ETA</div>
+            <div id="eta" class="info-value">--:--</div>
+        </div>
+    </div>
+    
+    <!-- Maneuver Card -->
+    <div class="maneuver-card">
+        <div class="maneuver-icon">
+            <i class="fas fa-arrow-up"></i>
+        </div>
+        <div class="maneuver-details">
+            <div id="maneuver-instruction" class="maneuver-instruction">
+                Proceed to the route
+            </div>
+            <div id="maneuver-distance" class="maneuver-distance">
+                0 m
+            </div>
+        </div>
+    </div>
+    
+    <!-- Gemini Floating Action Button -->
+    <button class="gemini-fab">
+        <i class="fas fa-comment-alt"></i>
+    </button>
+    
+    <!-- Gemini Chat Container -->
+    <div class="gemini-chat-container">
+        <div class="gemini-chat-header">
+            <div class="gemini-title">Gemini</div>
+            <button class="gemini-close-btn"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="gemini-messages"></div>
+        <div class="gemini-input-container">
+            <input id="gemini-input" type="text" placeholder="Ask Gemini...">
+            <button class="gemini-voice-btn"><i class="fas fa-microphone"></i></button>
+            <button class="gemini-send-btn"><i class="fas fa-paper-plane"></i></button>
+        </div>
+    </div>
+</div> 

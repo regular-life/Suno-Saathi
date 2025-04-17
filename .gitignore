@@ -2,3 +2,4 @@
 trial/
 */__pycache__/
 .env
+trail.py

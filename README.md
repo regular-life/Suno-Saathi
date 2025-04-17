@@ -1,79 +1,126 @@
-# Suno Saarthi - Conversational Navigation Assistant
+# Suno Saarthi
 
-## Overview
+**Suno Saarthi** is a lightweight, web‑based conversational navigation assistant powered by Google’s Gemini (LLM) and a FastAPI backend. Speak or type natural‑language navigation commands (e.g. “Navigate to India Gate”) and get turn‑by‑turn directions via a simple frontend interface.
 
-Suno Saarthi is a voice-activated AI co-passenger designed to enhance the driving experience for Indian roads. It provides navigation assistance, responds to queries in a natural, mixed-language (Hindi-English) style, and prioritizes driver safety. This project demonstrates a baseline conversational loop with wake-word detection, basic NLP, and integration with a Large Language Model (LLM) for conversational responses.
+---
 
-## Features
+## 📂 Repository Structure
 
-*   **Wake-Word Detection:** Activates with "Suno Saarthi" (or variations).
-*   **Voice Input:** Accepts voice commands using speech recognition.
-*   **NLP Integration:** Uses Rasa for intent recognition and entity extraction.
-*   **LLM Integration:** Leverages Gemini LLM for conversational responses.
-*   **Route Query Handling:**  Recognizes route-related queries (flyover, shortcut, traffic) and provides placeholder responses.
-*   **Mixed-Language Support:** Designed to handle code-switching between Hindi and English.
+```
+.
+├── .env                     # Environment variables (API keys)
+├── backend                  # FastAPI server
+│   ├── app.py               # Entry point
+│   └── modules              # Core logic
+│       ├── navigation.py    # Route‐lookup & directions logic
+│       ├── llm_interface.py # Gemini API wrapper
+│       └── wake_word.py     # Hotword detection
+├── config                   # Settings & secrets
+├── tests                    # Unit & integration tests
+│   └── test_api.py
+└── frontend                 # Static web app
+    ├── index.html
+    ├── css/
+    ├── js/
+    ├── includes/
+    └── partials/
+```
 
+---
 
-## Setup 
+## 🚀 Features
 
-1. **Clone the repository**
-    ```bash
-    git clone https://github.com/regular-life/Suno-Saarthi
-    ```
-    OR
-    **Download the zip and unzip it**
+- **Conversational UI**  
+  Speak or type your destination in plain English (or Hindi, etc.).
+- **LLM‑Powered**  
+  Uses Gemini to interpret navigation intents and extract origin/destination.
+- **Pluggable Navigation**  
+  Stubbed-out navigation module ready for integration with real‑world Routes APIs (e.g. Google Maps).
+- **Wake‑Word Detection**  
+  Lightweight hotword (“Hey Saarthi”) listener for hands‑free operation.
+- **Web Frontend**  
+  Simple HTML/CSS/JS frontend for desktop and mobile browsers.
 
-2. **Create a virtual environment (recommended):**
-    ```bash
-    python -m venv .venv
-    source .venv/bin/activate  # On Linux/macOS
-    .venv\Scripts\activate  # On Windows
-    ```
+---
 
-3.  **Install dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
+## ⚙️ Prerequisites
 
-4.  **Set up Gemini API Key:** 
-    Obtain a Gemini API key from the Google AI Studio ([https://aistudio.google.com/apikey](https://aistudio.google.com/apikey)) and set it as environment variable named `GEMINI_API_KEY`:
-    ```bash
-    export GEMINI_API_KEY="YOUR_GEMINI_API_KEY"  # Linux/macOS
-    set GEMINI_API_KEY="YOUR_GEMINI_API_KEY"  # Windows
-    ```
-    Alternative to these commands, you can also directly create a `.env` and write:
-    ```
-    GEMINI_API_KEY="{YOUR_KEY}"
-    ```
+- **Python** 3.8 or higher  
+- **pip** (Python package manager)  
+- (Optional) **Virtual environment** tool (venv, virtualenv, Conda, etc.)  
+- **Google Gemini API key**  
+- **Google Maps (or equivalent) API key** (for real routing)
 
-## Running the Project
+---
 
-1.  **Run the main script:**
-    ```bash
-    python main.py
-    ```
+## 🛠️ Setup & Installation
 
-2.  **Interact with Suno Saarthi:**
-    *   Say "Suno Saarthi" (or "Hello") to activate the assistant.
-    *   Speak your commands (e.g., "Navigate to India Gate", "What's the traffic like?").
-    *   Say "quit", "exit", or "stop" to end the session.
+1. **Clone the repository**  
+   ```bash
+   git clone https://github.com/regular-life/Suno-Saarthi.git
+   cd Suno-Saarthi
+   ```
 
-## Demo Mode
+2. **Create & activate a virtual environment**  
+   ```bash
+   python -m venv .venv
+   # Linux/macOS
+   source .venv/bin/activate
+   # Windows (PowerShell)
+   .venv\Scripts\Activate.ps1
+   ```
 
-For quick testing during evaluation, you can respond with "Hello" when prompted by the script instead of using the microphone. This bypasses the wake-word detection and allows you to directly input commands.
+3. **Install backend dependencies**  
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-## To-Do
+4. **Configure environment variables**  
+   Copy the example `.env` and add your API keys:
+   ```bash
+   cp .env.example .env
+   ```
+   Then edit `.env` to include:  
+   ```dotenv
+   GEMINI_API_KEY=your_gemini_key_here
+   MAPS_API_KEY=your_google_maps_key_here
+   ```
 
-1. **Routes API:** 
-    The navigation functionality is currently stubbed and requires integration with a **mapping API** (like Google Maps' Routes API).
-2. **hard-coded `navigation.py`:** 
-    Currently, the code is overall a bit hardcoded at few points, that needs to be resolved. (Post-direction access to the model.)
-3. **Accurate voice detection and response integration:** 
-    `Saarthi` is probably less used in the dataset on which the audiorecognizer is trained, hence there are issues with the model waking to the specific word.Need to use better trained, freely available model for this.
-4. A **Progressive Web App (PWA)** seems a good option for the final product, as it clears pretty much all requirement.
-5. **Refine Prompt:**
-    Prompting in `main.py` may need more refining.
+---
 
-## Additional Points to note
+## ▶️ Running the Project
 
-1. Gemini is now being used as the main LLM for conversation. TinyLlama performed very poorly, and also required local downloading. Deepseek is paid API. Hence, not using it too.
+### 1. Start the Backend Server
+
+From the project root:
+```bash
+cd backend
+python app.py
+```
+This will launch FastAPI on `http://localhost:8000`.  
+You can explore the auto‑generated docs at `http://localhost:8000/docs`.
+
+### 2. Start the Frontend Server
+
+In a separate terminal:
+```bash
+cd frontend
+python -m http.server 8080
+```
+Open your browser to `http://localhost:8080` to interact with Suno Saarthi.
+
+---
+
+## 🔜 To‑Do
+
+- [ ] Integrate a real Routes API (e.g., Google Maps, Mapbox) in `navigation.py`  
+- [ ] Refine LLM prompts and response handling in `modules/llm_interface.py`  
+- [ ] Improve wake‑word detection accuracy and performance
+<!-- - [ ] Turn frontend into a Progressive Web App (PWA)   -->
+<!-- - [ ] Add user authentication & tighten CORS/security for production -->
+
+Thinking of using "google-adk" with "google search tool" to fetch preferable response which requires user location.
+LLM usage is currently faulty and needs to corrected/ improved.
+PWA not functioning correctly right now. Does not take voice input from user (probably firefox or linux issue).
+
+---

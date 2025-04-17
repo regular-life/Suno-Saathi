@@ -1,0 +1,456 @@
+/* Voice Recognition Modal Styles */
+.voice-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.voice-modal-content {
+    background-color: white;
+    border-radius: 16px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2);
+    position: relative;
+    padding: 24px;
+    font-family: 'Roboto', sans-serif;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+    transform: translateY(20px);
+    opacity: 0.95;
+}
+
+.close-modal {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    font-size: 24px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #666;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+.close-modal:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    color: #333;
+}
+
+.voice-header {
+    text-align: center;
+    margin-bottom: 24px;
+}
+
+.voice-header h2 {
+    color: #4285f4;
+    margin-bottom: 10px;
+    font-size: 28px;
+    font-weight: 500;
+}
+
+.voice-status {
+    font-size: 18px;
+    font-weight: 500;
+    color: #333;
+    margin: 12px 0;
+}
+
+.voice-text {
+    font-size: 16px;
+    color: #666;
+    min-height: 24px;
+    font-style: italic;
+    margin: 12px 0;
+    padding: 8px 16px;
+    background-color: #f5f5f5;
+    border-radius: 12px;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.progress-container {
+    height: 6px;
+    background-color: #e0e0e0;
+    border-radius: 3px;
+    margin: 20px 0;
+    overflow: hidden;
+}
+
+.progress-bar {
+    height: 100%;
+    width: 0%;
+    background-color: #4285f4;
+    transition: width 0.1s linear;
+}
+
+.voice-animation {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 60px;
+    margin: 15px 0;
+}
+
+.voice-bar {
+    width: 6px;
+    height: 10px;
+    background-color: #4285f4;
+    margin: 0 4px;
+    border-radius: 3px;
+    transition: height 0.15s ease;
+}
+
+.voice-body {
+    padding: 10px 0;
+}
+
+.voice-commands-container {
+    margin-bottom: 20px;
+}
+
+.voice-commands-container h3 {
+    font-size: 18px;
+    color: #333;
+    margin-bottom: 14px;
+    position: relative;
+    padding-bottom: 8px;
+}
+
+.voice-commands-container h3::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 40px;
+    height: 3px;
+    background-color: #4285f4;
+    border-radius: 1.5px;
+}
+
+.voice-commands {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px;
+}
+
+.voice-commands li {
+    padding: 10px 12px;
+    color: #555;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    border-left: 3px solid #4285f4;
+    transition: all 0.2s ease;
+}
+
+.voice-commands li:hover {
+    background-color: #e8f0fe;
+    transform: translateX(2px);
+}
+
+.command-placeholder {
+    font-style: italic;
+    color: #4285f4;
+    font-weight: 500;
+    display: inline-block;
+    padding: 0 2px;
+    border-radius: 3px;
+    background-color: rgba(66, 133, 244, 0.1);
+}
+
+.waiting-text {
+    text-align: center;
+    color: #888;
+    font-style: italic;
+    margin-top: 20px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    padding: 12px;
+    border-radius: 8px;
+    background-color: #f8f9fa;
+}
+
+/* Microphone Button */
+#mic-button {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background-color: #4285f4;
+    color: white;
+    border: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: all 0.3s ease;
+    z-index: 100;
+}
+
+#mic-button i {
+    font-size: 24px;
+    transition: all 0.2s ease;
+}
+
+#mic-button:hover {
+    background-color: #3367d6;
+    transform: scale(1.05);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+}
+
+#mic-button:active {
+    transform: scale(0.95);
+    background-color: #2850a7;
+}
+
+/* Notification styles */
+.notification {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 14px 24px;
+    border-radius: 8px;
+    color: white;
+    font-weight: 500;
+    opacity: 0.95;
+    z-index: 1100;
+    max-width: 80%;
+    text-align: center;
+    animation: fadeInOut 3s ease-in-out;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.notification.info {
+    background-color: #4285F4;
+}
+
+.notification.success {
+    background-color: #34A853;
+}
+
+.notification.warning {
+    background-color: #FBBC05;
+    color: #333;
+}
+
+.notification.error {
+    background-color: #EA4335;
+}
+
+@keyframes fadeInOut {
+    0% { opacity: 0; transform: translate(-50%, 20px); }
+    15% { opacity: 0.95; transform: translate(-50%, 0); }
+    85% { opacity: 0.95; transform: translate(-50%, 0); }
+    100% { opacity: 0; transform: translate(-50%, -20px); }
+}
+
+/* Pulse animation for processing effects */
+@keyframes pulse {
+    0% { 
+        transform: scale(1); 
+        opacity: 1;
+    }
+    50% { 
+        transform: scale(1.02); 
+        opacity: 0.8;
+    }
+    100% { 
+        transform: scale(1); 
+        opacity: 1;
+    }
+}
+
+/* Modal entrance animation */
+.voice-modal[style*="display: flex"] .voice-modal-content {
+    transform: translateY(0);
+    opacity: 1;
+}
+
+/* Error state styling */
+.voice-modal.error .voice-status {
+    color: #EA4335;
+}
+
+.voice-modal.error .waiting-text {
+    background-color: rgba(234, 67, 53, 0.1);
+    color: #EA4335;
+}
+
+.voice-modal.error .progress-container {
+    display: none;
+}
+
+/* Responsive adjustments */
+@media (max-width: 600px) {
+    .voice-modal-content {
+        width: 95%;
+        max-height: 85vh;
+        padding: 20px 16px;
+    }
+    
+    .voice-commands {
+        grid-template-columns: 1fr;
+    }
+    
+    #mic-button {
+        width: 54px;
+        height: 54px;
+        bottom: 20px;
+        right: 20px;
+    }
+    
+    .voice-header h2 {
+        font-size: 22px;
+    }
+
+    .voice-text {
+        font-size: 14px;
+        padding: 6px 12px;
+    }
+    
+    .voice-animation {
+        height: 50px;
+    }
+    
+    .voice-bar {
+        width: 4px;
+        margin: 0 3px;
+    }
+    
+    .voice-commands-container h3 {
+        font-size: 16px;
+    }
+    
+    .voice-commands li {
+        font-size: 14px;
+        padding: 8px 10px;
+    }
+    
+    .waiting-text {
+        font-size: 14px;
+        padding: 10px;
+    }
+}
+
+/* Landscape mode adjustments */
+@media (max-height: 500px) and (orientation: landscape) {
+    .voice-modal-content {
+        max-height: 95vh;
+        display: flex;
+        flex-direction: row;
+        padding: 16px;
+    }
+    
+    .voice-header {
+        width: 40%;
+        margin-right: 16px;
+        margin-bottom: 0;
+    }
+    
+    .voice-body {
+        width: 60%;
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+    
+    .voice-animation {
+        height: 40px;
+    }
+    
+    .progress-container {
+        margin: 10px 0;
+    }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    .voice-modal-content {
+        background-color: #303134;
+        color: #e8eaed;
+    }
+    
+    .voice-header h2 {
+        color: #8ab4f8;
+    }
+    
+    .voice-status {
+        color: #e8eaed;
+    }
+    
+    .voice-text {
+        color: #bdc1c6;
+        background-color: #202124;
+    }
+    
+    .voice-commands-container h3 {
+        color: #e8eaed;
+    }
+    
+    .voice-commands-container h3::after {
+        background-color: #8ab4f8;
+    }
+    
+    .voice-commands li {
+        background-color: #3c4043;
+        color: #e8eaed;
+        border-left-color: #8ab4f8;
+    }
+    
+    .voice-commands li:hover {
+        background-color: #4a4e51;
+    }
+    
+    .waiting-text {
+        color: #9aa0a6;
+        background-color: #303134;
+    }
+    
+    .close-modal {
+        color: #9aa0a6;
+    }
+    
+    .close-modal:hover {
+        background-color: rgba(232, 234, 237, 0.08);
+        color: #e8eaed;
+    }
+    
+    .progress-container {
+        background-color: #3c4043;
+    }
+    
+    .progress-bar {
+        background-color: #8ab4f8;
+    }
+    
+    .voice-bar {
+        background-color: #8ab4f8;
+    }
+    
+    .command-placeholder {
+        color: #8ab4f8;
+        background-color: rgba(138, 180, 248, 0.15);
+    }
+} 

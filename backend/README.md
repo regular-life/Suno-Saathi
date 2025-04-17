@@ -8,7 +8,8 @@ The backend follows a modular architecture:
 
 - `app.py`: Main FastAPI application with simplified API routes
 - `test_api.py`: Script to test the API endpoints
-- `requirements.txt`: Minimal dependencies for running the API
+- `pyproject.toml`: Project configuration and dependencies managed by Poetry
+- `.pre-commit-config.yaml`: Pre-commit hooks configuration
 
 ## API Endpoints
 
@@ -29,6 +30,33 @@ The backend follows a modular architecture:
 - `POST /api/wake/detect`: Detect wake word in text
 
 ## Setup
+
+### Using Poetry (Recommended)
+
+1. Install Poetry if you haven't already:
+   ```bash
+   pipx install poetry
+   ```
+
+2. Create and activate the virtual environment:
+   ```bash
+   cd backend
+   poetry env use python3
+   poetry install --with dev --no-root
+   eval "$(poetry env activate)"
+   ```
+
+3. To add new packages:
+   ```bash
+   poetry add package-name
+   ```
+
+4. Set up pre-commit hooks:
+   ```bash
+   pre-commit install
+   ```
+
+### Using Traditional Virtual Environment
 
 1. Create a virtual environment:
    ```bash
@@ -61,21 +89,3 @@ A test script is provided to verify all endpoints are working:
 cd backend
 python test_api.py
 ```
-
-## Future Enhancements
-
-The current implementation provides a simplified API with mock responses. Future enhancements will include:
-
-1. Full integration with Google Maps API
-2. LLM integration with Gemini
-3. Wake word detection using audio input
-4. Persistent route tracking
-5. User authentication and preferences
-
-## Notes for Python 3.13 Users
-
-The simplified version is compatible with Python 3.13. If you encounter dependency issues with PyAudio, SpeechRecognition, or pydantic-core, consider:
-
-1. Installing these packages through your system package manager
-2. Using an older Python version (3.10-3.12) for development
-3. Waiting for the packages to release Python 3.13 compatible versions 

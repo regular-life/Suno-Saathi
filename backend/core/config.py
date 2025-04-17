@@ -41,7 +41,7 @@ class WakeWordConfig(BaseSettings):
 
 
 class LLMConfig(BaseSettings):
-    MODEL: str = "gemini-2.5-pro-preview-03-25"
+    MODEL: str = "gemini-pro"
     MAX_TOKENS: int = 100
     TEMPERATURE: float = 0.8
 

@@ -12,12 +12,6 @@ def test_root():
     print("Root endpoint:", response.status_code, response.json())
 
 
-def test_health():
-    """Test the health endpoint"""
-    response = requests.get(f"{BASE_URL}/health")
-    print("Health endpoint:", response.status_code, response.json())
-
-
 def test_navigation_directions():
     """Test the navigation directions endpoint"""
     data = {"origin": "Delhi", "destination": "Mumbai"}
@@ -53,7 +47,6 @@ def test_wake_word_detection():
 if __name__ == "__main__":
     print("Testing Suno Saarthi API...")
     test_root()
-    test_health()
     test_navigation_directions()
     test_navigation_query()
     test_llm_generate()

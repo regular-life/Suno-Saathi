@@ -1,10 +1,6 @@
-import json
-import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import google.generativeai as genai
-import requests
-from dotenv import load_dotenv
 
 from core.config import CONFIG
 

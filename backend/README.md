@@ -87,5 +87,5 @@ A test script is provided to verify all endpoints are working:
 
 ```bash
 cd backend
-python test_api.py
+python tests/test_api.py
 ```

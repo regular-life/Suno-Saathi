@@ -8,8 +8,6 @@ This module handles all navigation-related functionality, including:
 - Getting traffic information
 """
 
-import json
-import os
 import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote

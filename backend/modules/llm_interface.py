@@ -1,26 +1,29 @@
+import json
+import os
+from typing import Any, Dict, List, Optional
+
 import google.generativeai as genai
 import requests
 from dotenv import load_dotenv
-import os
-from typing import Optional, Dict, Any, List
-import json
-from backend.config.secrets import GEMINI_API_KEY, LLM_MODEL
+
+from core.config import CONFIG
+
 
 class GeminiLLM:
     def __init__(self, model_name: str = None):
         """
         Initialize Gemini Pro with proper configuration
-        
+
         Args:
             model_name: The Gemini model version to use
         """
-        api_key = GEMINI_API_KEY
+        api_key = CONFIG.API_KEYS.GEMINI
         if not api_key:
             raise ValueError("Missing GEMINI_API_KEY in environment variables")
         genai.configure(api_key=api_key)
 
         # Use model name from parameters or from secrets
-        self.model_name = model_name or LLM_MODEL or "gemini-pro"
+        self.model_name = model_name or CONFIG.LLM.MODEL or "gemini-pro"
 
         # Base configuration
         self.base_config = genai.GenerationConfig(
@@ -31,23 +34,23 @@ class GeminiLLM:
         )
 
         self.safety_settings = {
-            'HATE': 'BLOCK_NONE',
-            'HARASSMENT': 'BLOCK_NONE',
-            'SEXUAL': 'BLOCK_NONE',
-            'DANGEROUS': 'BLOCK_NONE'
+            "HATE": "BLOCK_NONE",
+            "HARASSMENT": "BLOCK_NONE",
+            "SEXUAL": "BLOCK_NONE",
+            "DANGEROUS": "BLOCK_NONE",
         }
 
         try:
             self.model = genai.GenerativeModel(
                 model_name=self.model_name,
                 generation_config=self.base_config,
-                safety_settings=self.safety_settings
+                safety_settings=self.safety_settings,
             )
             print(f"Successfully initialized Gemini model: {self.model_name}")
         except Exception as e:
             print(f"Warning: Failed to initialize Gemini model: {e}")
             self.model = None
-        
+
         self.default_context = """
         You are Suno Saarthi, a friendly and helpful AI co-passenger designed for Indian drivers. Your role is to provide:
         1. Safe, distraction-free navigation assistance
@@ -103,17 +106,22 @@ class GeminiLLM:
         Keep responses brief and focused on navigation when the user is driving.
         """
 
-    def generate_reply(self, prompt: str, max_new_tokens: int = 200, 
-                      temperature: float = 1, include_context: bool = True) -> Dict[str, Any]:
+    def generate_reply(
+        self,
+        prompt: str,
+        max_new_tokens: int = 200,
+        temperature: float = 1,
+        include_context: bool = True,
+    ) -> Dict[str, Any]:
         """
         Generate response with dynamic token handling
-        
+
         Args:
             prompt: The user input prompt
             max_new_tokens: Maximum number of tokens to generate
             temperature: Controls randomness (0.0-1.0)
             include_context: Whether to include the default assistant context
-            
+
         Returns:
             Dict containing response status and text
         """
@@ -121,37 +129,34 @@ class GeminiLLM:
             return {
                 "status": "error",
                 "message": "Gemini model not initialized",
-                "response": "I'm unable to generate a response at the moment."
+                "response": "I'm unable to generate a response at the moment.",
             }
-            
+
         try:
             # Create fresh config for each request
             current_config = genai.GenerationConfig(
                 temperature=temperature,
                 top_p=0.95,
                 top_k=50,
-                max_output_tokens=max_new_tokens
+                max_output_tokens=max_new_tokens,
             )
-            
+
             # Add context if requested
             full_prompt = self.default_context + "\n\nUser: " + prompt + "\nSaarthi:" if include_context else prompt
 
-            response = self.model.generate_content(
-                full_prompt,
-                generation_config=current_config
-            )
+            response = self.model.generate_content(full_prompt, generation_config=current_config)
 
             if not response.text:
                 return {
                     "status": "error",
                     "message": "Empty response received",
-                    "response": "Could you please rephrase that?"
+                    "response": "Could you please rephrase that?",
                 }
-                
+
             return {
                 "status": "success",
                 "response": response.text.strip(),
-                "tokens_used": len(response.text.split())  # Approximate token count
+                "tokens_used": len(response.text.split()),  # Approximate token count
             }
 
         except Exception as e:
@@ -159,36 +164,35 @@ class GeminiLLM:
             return {
                 "status": "error",
                 "message": str(e),
-                "response": "I'm having trouble connecting. Please try again later."
+                "response": "I'm having trouble connecting. Please try again later.",
             }
-    
-    def process_navigation_prompt(self, user_query: str, 
-                                navigation_context: Optional[Dict] = None) -> Dict[str, Any]:
+
+    def process_navigation_prompt(self, user_query: str, navigation_context: Optional[Dict] = None) -> Dict[str, Any]:
         """
         Process a navigation-related prompt with specific context
-        
+
         Args:
             user_query: The user's navigation question
             navigation_context: Optional dict with current route, location, etc.
-            
+
         Returns:
             Dict with response formatted for navigation
         """
         # Create a contextualized navigation prompt
         context = "You are navigating and need to provide clear, concise directions. "
-        
+
         if navigation_context:
-            if 'current_location' in navigation_context:
+            if "current_location" in navigation_context:
                 context += f"Current location: {navigation_context['current_location']}. "
-            if 'destination' in navigation_context:
+            if "destination" in navigation_context:
                 context += f"Destination: {navigation_context['destination']}. "
-            if 'next_turn' in navigation_context:
+            if "next_turn" in navigation_context:
                 context += f"Next turn: {navigation_context['next_turn']}. "
-            if 'distance_remaining' in navigation_context:
+            if "distance_remaining" in navigation_context:
                 context += f"Distance remaining: {navigation_context['distance_remaining']}. "
-        
+
         context += "\nKeep your response under 15 words, focused on the immediate navigation need."
-        
+
         full_prompt = context + f"\n\nUser asks: {user_query}\nNavigation response:"
-        
-        return self.generate_reply(full_prompt, max_new_tokens=150, temperature=1, include_context=False) 
+
+        return self.generate_reply(full_prompt, max_new_tokens=150, temperature=1, include_context=False)

@@ -23,12 +23,6 @@ class TrafficRequest(BaseModel):
     destination: str
 
 
-class LLMRequest(BaseModel):
-    prompt: str
-    max_tokens: Optional[int] = 100
-    temperature: Optional[float] = 0.9
-
-
 class NavigationQueryRequest(BaseModel):
     query: str
     location: Optional[Dict[str, float]] = None

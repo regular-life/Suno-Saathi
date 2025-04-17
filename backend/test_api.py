@@ -2,6 +2,8 @@ import json
 
 import requests
 
+from modules.llm_interface import GeminiLLM
+
 # Base URL for the API
 BASE_URL = "http://localhost:8000"
 
@@ -29,11 +31,10 @@ def test_navigation_query():
 
 
 def test_llm_generate():
-    """Test the LLM generate endpoint"""
-    data = {"prompt": "How's the traffic?"}
-    response = requests.post(f"{BASE_URL}/api/llm/generate", json=data)
-    print("LLM generate endpoint:", response.status_code)
-    print(json.dumps(response.json(), indent=2))
+    """Create an LLM and test its generations"""
+    llm = GeminiLLM()
+    response = llm.generate_reply("How's the traffic?")
+    print("LLM generation:", response)
 
 
 def test_wake_word_detection():

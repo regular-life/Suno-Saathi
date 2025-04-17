@@ -10,7 +10,6 @@ from modules.navigation import NavigationHandler
 from .schemas import (
     DirectionsRequest,
     GeocodeRequest,
-    LLMRequest,
     NavigationQueryRequest,
     PlacesRequest,
     TrafficRequest,
@@ -57,7 +56,6 @@ async def get_frontend_config(request: Request):
             "geocode": "/api/navigation/geocode",
             "traffic": "/api/navigation/traffic",
             "query": "/api/navigation/query",
-            "llm": "/api/llm/generate",
             "wake": "/api/wake/detect",
         },
     }
@@ -292,36 +290,6 @@ async def process_navigation_query(request: NavigationQueryRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing navigation query: {str(e)}")
-
-
-# LLM routes
-@router.post("/llm/generate")
-async def generate_llm_response(request: LLMRequest):
-    """Generate a response using the LLM"""
-    if not llm:
-        raise HTTPException(status_code=503, detail="LLM service not available")
-
-    try:
-        response = llm.generate_reply(
-            request.prompt,
-            max_new_tokens=request.max_tokens,
-            temperature=request.temperature,
-        )
-
-        if response and response.get("status") == "success":
-            return {
-                "status": "success",
-                "response": response.get("response"),
-                "tokens_used": response.get("tokens_used", 0),
-            }
-        else:
-            return {
-                "status": "error",
-                "message": response.get("message", "Unknown error"),
-                "response": response.get("response", "Failed to generate response"),
-            }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 # Wake word routes

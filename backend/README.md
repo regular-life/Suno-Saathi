@@ -20,11 +20,6 @@ The backend follows a modular architecture:
 - `POST /api/navigation/places`: Find nearby places of interest
 - `POST /api/navigation/query`: Process a natural language navigation query
 
-### LLM
-
-- `POST /api/llm/generate`: Generate a response using the LLM
-- `POST /api/llm/navigation`: Process a navigation-related prompt with context
-
 ### Wake Word
 
 - `POST /api/wake/detect`: Detect wake word in text

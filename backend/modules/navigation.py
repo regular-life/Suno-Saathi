@@ -2,50 +2,50 @@
 Navigation Module for Suno-Saarthi
 
 This module handles all navigation-related functionality, including:
-- Getting directions
-- Finding nearby places
-- Geocoding addresses
-- Getting traffic information
+- Getting directions using Directions API
+- Finding nearby places using Places API
+- Geocoding addresses using Geocoding API
+- Getting traffic information using Directions API
 """
 
 import time
-from typing import Any, Dict, List, Optional
-from urllib.parse import quote
+from typing import Any, Dict, List, Optional, Union
 
 import googlemaps
-import requests
 
 from core.config import CONFIG
 
 
 class NavigationHandler:
     """
-    Handler for navigation-related functionality using Google Maps API
+    Handler for navigation-related functionality using Google Maps Platform APIs
     """
 
     def __init__(self):
         """Initialize the navigation handler with necessary API clients"""
         self.api_key = CONFIG.API_KEYS.GOOGLE
-        self.client = None
+        self.client = googlemaps.Client(key=self.api_key)
+        print("Google Maps Platform client initialized successfully")
 
-        if self.api_key:
-            try:
-                self.client = googlemaps.Client(key=self.api_key)
-                print("Google Maps client initialized successfully")
-            except Exception as e:
-                print(f"Error initializing Google Maps client: {e}")
-                # Continue without client, will use direct API calls as fallback
-        else:
-            print("Warning: GOOGLE_API_KEY not set. Navigation functionality will be limited.")
-
-    def get_directions(self, origin: str, destination: str, mode: str = "driving") -> Dict[str, Any]:
+    def get_directions(
+        self,
+        origin: Union[str, Dict[str, float]],
+        destination: Union[str, Dict[str, float]],
+        mode: str = "driving",
+        waypoints: Optional[List[Union[str, Dict[str, float]]]] = None,
+        departure_time: Optional[int] = None,
+        arrival_time: Optional[int] = None,
+    ) -> Dict[str, Any]:
         """
-        Get directions from origin to destination
+        Get directions from origin to destination using Directions API
 
         Args:
             origin: Starting location (address, coordinates, or place ID)
             destination: Ending location (address, coordinates, or place ID)
             mode: Transportation mode (driving, walking, bicycling, transit)
+            waypoints: List of intermediate points to visit
+            departure_time: When to depart (Unix timestamp)
+            arrival_time: When to arrive (Unix timestamp)
 
         Returns:
             Dictionary with route information
@@ -56,150 +56,185 @@ class NavigationHandler:
             mode = "driving"
 
         try:
-            if self.client:
-                # Use the googlemaps client
-                directions = self.client.directions(
-                    origin=origin, destination=destination, mode=mode, alternatives=True
-                )
-
-                # Process and enhance the response
-                return self._process_directions_response(directions)
-            else:
-                # Fallback: direct API call
-                return self._direct_directions_call(origin, destination, mode)
+            # Get directions with the Directions API
+            directions = self.client.directions(
+                origin=origin,
+                destination=destination,
+                mode=mode,
+                waypoints=waypoints,
+                departure_time=departure_time,
+                arrival_time=arrival_time,
+                alternatives=True,
+                language="en",
+                units="metric",
+            )
+            return self._process_directions_response(directions)
         except Exception as e:
             print(f"Error getting directions: {e}")
-            # Return a minimal error response
             return {"status": "error", "error": str(e), "routes": []}
 
-    def find_places(self, query: str, location: Optional[str] = None) -> Dict[str, Any]:
+    def find_places(
+        self,
+        query: str,
+        location: Optional[Union[str, Dict[str, float]]] = None,
+        radius: Optional[int] = None,
+        type: Optional[str] = None,
+        language: str = "en",
+    ) -> Dict[str, Any]:
         """
-        Find places based on a query string
+        Find places based on a query string using Places API
 
         Args:
             query: The search query
             location: Optional location context (lat,lng or address)
+            radius: Search radius in meters
+            type: Place type filter
+            language: Results language
 
         Returns:
             Dictionary with place results
         """
         try:
-            if self.client:
-                # Use the googlemaps client for more accurate results
-                if location:
-                    # If location is provided, use nearby search
-                    # First geocode the location if it's not coordinates
-                    if not self._is_coordinates(location):
-                        geocode_result = self.geocode_address(location)
-                        if geocode_result.get("status") == "OK":
-                            location = f"{geocode_result['results'][0]['geometry']['location']['lat']},{geocode_result['results'][0]['geometry']['location']['lng']}"
-                        else:
-                            # If geocoding fails, use text search without location
-                            return self._text_search_places(query)
+            if location:
+                # If location is provided, use nearby search
+                if not self._is_coordinates(location):
+                    geocode_result = self.geocode_address(location)
+                    if geocode_result.get("status") == "OK":
+                        location = geocode_result["results"][0]["geometry"]["location"]
+                    else:
+                        return self._text_search_places(query, language=language)
 
-                    # Parse location into lat, lng
-                    lat, lng = map(float, location.split(","))
-
-                    # Use nearby search with location
-                    places_result = self.client.places_nearby(location=(lat, lng), keyword=query, rank_by="distance")
-                else:
-                    # Use text search without location context
-                    return self._text_search_places(query)
-
-                # Process the results
-                return self._process_places_response(places_result)
+                # Use nearby search with location
+                places_result = self.client.places_nearby(
+                    location=location,
+                    keyword=query,
+                    radius=radius,
+                    type=type,
+                    language=language,
+                )
             else:
-                # Fallback: direct API call
-                return self._direct_places_call(query, location)
+                # Use text search without location context
+                return self._text_search_places(query, language=language)
+
+            return self._process_places_response(places_result)
         except Exception as e:
             print(f"Error finding places: {e}")
             return {"status": "error", "error": str(e), "places": []}
 
-    def _text_search_places(self, query: str) -> Dict[str, Any]:
-        """Helper method for text search"""
-        if self.client:
-            places_result = self.client.places(query=query, type="establishment")
-            return self._process_places_response(places_result)
-        else:
-            return self._direct_places_call(query, None)
+    def _text_search_places(self, query: str, language: str = "en") -> Dict[str, Any]:
+        """Helper method for text search using Places API"""
+        places_result = self.client.places(
+            query=query,
+            type="establishment",
+            language=language,
+        )
+        return self._process_places_response(places_result)
 
-    def geocode_address(self, address: str) -> Dict[str, Any]:
+    def geocode_address(
+        self,
+        address: str,
+        components: Optional[Dict[str, str]] = None,
+        bounds: Optional[Dict[str, Dict[str, float]]] = None,
+        region: Optional[str] = None,
+        language: str = "en",
+    ) -> Dict[str, Any]:
         """
-        Geocode an address to coordinates
+        Geocode an address to coordinates using Geocoding API
 
         Args:
             address: The address to geocode
+            components: Additional address components to filter by
+            bounds: Bounding box to bias results
+            region: Region code to bias results
+            language: Results language
 
         Returns:
             Dictionary with geocoding results
         """
         try:
-            if self.client:
-                geocode_result = self.client.geocode(address)
-                return {
-                    "status": "OK" if geocode_result else "ZERO_RESULTS",
-                    "results": geocode_result,
-                }
-            else:
-                # Fallback: direct API call
-                return self._direct_geocode_call(address)
+            geocode_result = self.client.geocode(
+                address=address,
+                components=components,
+                bounds=bounds,
+                region=region,
+                language=language,
+            )
+            return {
+                "status": "OK" if geocode_result else "ZERO_RESULTS",
+                "results": geocode_result,
+            }
         except Exception as e:
             print(f"Error geocoding address: {e}")
             return {"status": "error", "error": str(e), "results": []}
 
-    def get_traffic_info(self, origin: str, destination: str) -> Dict[str, Any]:
+    def get_traffic_info(
+        self,
+        origin: Union[str, Dict[str, float]],
+        destination: Union[str, Dict[str, float]],
+        departure_time: Optional[int] = None,
+    ) -> Dict[str, Any]:
         """
-        Get traffic information between two points
+        Get traffic information between two points using Directions API
 
         Args:
             origin: Starting location
             destination: Ending location
+            departure_time: When to depart (Unix timestamp)
 
         Returns:
             Dictionary with traffic information
         """
         try:
-            # Get directions with and without traffic
-            if self.client:
-                # With traffic - departure_time=now
-                with_traffic = self.client.directions(
-                    origin=origin,
-                    destination=destination,
-                    mode="driving",
-                    departure_time=int(time.time()),
-                )
+            if not departure_time:
+                departure_time = int(time.time())
 
-                # Without traffic
-                without_traffic = self.client.directions(origin=origin, destination=destination, mode="driving")
+            # Get directions with traffic
+            with_traffic = self.client.directions(
+                origin=origin,
+                destination=destination,
+                mode="driving",
+                departure_time=departure_time,
+            )
 
-                # Extract durations
-                if with_traffic and without_traffic:
-                    traffic_duration = with_traffic[0]["legs"][0]["duration_in_traffic"]["value"]
-                    normal_duration = without_traffic[0]["legs"][0]["duration"]["value"]
+            # Get directions without traffic (using a past time)
+            without_traffic = self.client.directions(
+                origin=origin,
+                destination=destination,
+                mode="driving",
+                departure_time=departure_time - 86400,  # 24 hours ago
+            )
 
-                    # Calculate traffic level
-                    traffic_ratio = traffic_duration / normal_duration if normal_duration > 0 else 1
+            if with_traffic and without_traffic:
+                traffic_duration = with_traffic[0]["legs"][0]["duration_in_traffic"]["value"]
+                normal_duration = without_traffic[0]["legs"][0]["duration"]["value"]
 
-                    if traffic_ratio < 1.1:
-                        traffic_level = "light"
-                    elif traffic_ratio < 1.3:
-                        traffic_level = "moderate"
-                    elif traffic_ratio < 1.5:
-                        traffic_level = "heavy"
-                    else:
-                        traffic_level = "severe"
+                # Calculate traffic level
+                traffic_ratio = traffic_duration / normal_duration if normal_duration > 0 else 1
 
-                    return {
-                        "status": "success",
-                        "normal_duration": without_traffic[0]["legs"][0]["duration"]["text"],
-                        "traffic_duration": with_traffic[0]["legs"][0]["duration_in_traffic"]["text"],
-                        "has_traffic": traffic_duration > normal_duration * 1.1,
-                        "traffic_level": traffic_level,
-                        "delay_minutes": int((traffic_duration - normal_duration) / 60),
-                    }
+                if traffic_ratio < 1.1:
+                    traffic_level = "light"
+                elif traffic_ratio < 1.3:
+                    traffic_level = "moderate"
+                elif traffic_ratio < 1.5:
+                    traffic_level = "heavy"
+                else:
+                    traffic_level = "severe"
 
-            # Fallback: direct API call or estimated response
-            return self._direct_traffic_call(origin, destination)
+                return {
+                    "status": "success",
+                    "normal_duration": without_traffic[0]["legs"][0]["duration"]["text"],
+                    "traffic_duration": with_traffic[0]["legs"][0]["duration_in_traffic"]["text"],
+                    "has_traffic": traffic_duration > normal_duration * 1.1,
+                    "traffic_level": traffic_level,
+                    "delay_minutes": int((traffic_duration - normal_duration) / 60),
+                }
+
+            return {
+                "status": "error",
+                "error": "Could not get traffic information",
+                "has_traffic": False,
+                "traffic_level": "unknown",
+            }
         except Exception as e:
             print(f"Error getting traffic info: {e}")
             return {
@@ -215,7 +250,6 @@ class NavigationHandler:
         if not directions:
             return {"status": "ZERO_RESULTS", "routes": []}
 
-        # Extract main route information
         result = {"status": "OK", "routes": []}
 
         for route in directions:
@@ -228,6 +262,8 @@ class NavigationHandler:
                 "start_location": route["legs"][0]["start_location"],
                 "end_location": route["legs"][0]["end_location"],
                 "steps": [],
+                "warnings": route.get("warnings", []),
+                "copyrights": route.get("copyrights", ""),
             }
 
             # Add traffic duration if available
@@ -243,6 +279,8 @@ class NavigationHandler:
                     "start_location": step["start_location"],
                     "end_location": step["end_location"],
                     "maneuver": step.get("maneuver", ""),
+                    "travel_mode": step.get("travel_mode", ""),
+                    "polyline": step.get("polyline", {}),
                 }
                 processed_route["steps"].append(processed_step)
 
@@ -266,6 +304,10 @@ class NavigationHandler:
                 "rating": place.get("rating", 0),
                 "user_ratings_total": place.get("user_ratings_total", 0),
                 "types": place.get("types", []),
+                "price_level": place.get("price_level", 0),
+                "business_status": place.get("business_status", ""),
+                "opening_hours": place.get("opening_hours", {}),
+                "permanently_closed": place.get("permanently_closed", False),
             }
 
             # Add photos if available
@@ -277,107 +319,11 @@ class NavigationHandler:
 
         return result
 
-    # Fallback direct API call methods
-    def _direct_directions_call(self, origin: str, destination: str, mode: str) -> Dict[str, Any]:
-        """Make a direct call to the Directions API"""
-        if not self.api_key:
-            return self._generate_mock_directions(origin, destination, mode)
-
-        url = f"https://maps.googleapis.com/maps/api/directions/json?origin={quote(origin)}&destination={quote(destination)}&mode={mode}&key={self.api_key}"
-
-        try:
-            response = requests.get(url)
-            data = response.json()
-            return self._process_directions_response(data.get("routes", []))
-        except Exception as e:
-            print(f"Error in direct directions call: {e}")
-            return self._generate_mock_directions(origin, destination, mode)
-
-    def _direct_places_call(self, query: str, location: Optional[str]) -> Dict[str, Any]:
-        """Make a direct call to the Places API"""
-        if not self.api_key:
-            return self._generate_mock_places(query)
-
-        # Determine which API to use
-        if location and self._is_coordinates(location):
-            # Nearby search with location
-            lat, lng = map(float, location.split(","))
-            url = f"https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={lat},{lng}&keyword={quote(query)}&rankby=distance&key={self.api_key}"
-        else:
-            # Text search
-            url = f"https://maps.googleapis.com/maps/api/place/textsearch/json?query={quote(query)}&key={self.api_key}"
-
-        try:
-            response = requests.get(url)
-            data = response.json()
-            return self._process_places_response(data)
-        except Exception as e:
-            print(f"Error in direct places call: {e}")
-            return self._generate_mock_places(query)
-
-    def _direct_geocode_call(self, address: str) -> Dict[str, Any]:
-        """Make a direct call to the Geocoding API"""
-        if not self.api_key:
-            return self._generate_mock_geocode(address)
-
-        url = f"https://maps.googleapis.com/maps/api/geocode/json?address={quote(address)}&key={self.api_key}"
-
-        try:
-            response = requests.get(url)
-            return response.json()
-        except Exception as e:
-            print(f"Error in direct geocode call: {e}")
-            return self._generate_mock_geocode(address)
-
-    def _direct_traffic_call(self, origin: str, destination: str) -> Dict[str, Any]:
-        """Estimate traffic or make direct call"""
-        # First try to get directions with traffic
-        if not self.api_key:
-            return self._generate_mock_traffic()
-
-        url = f"https://maps.googleapis.com/maps/api/directions/json?origin={quote(origin)}&destination={quote(destination)}&departure_time=now&key={self.api_key}"
-
-        try:
-            response = requests.get(url)
-            data = response.json()
-
-            if data.get("status") == "OK" and data.get("routes"):
-                leg = data["routes"][0]["legs"][0]
-                # Check if we have traffic info
-                if "duration_in_traffic" in leg:
-                    traffic_duration = leg["duration_in_traffic"]["value"]
-                    normal_duration = leg["duration"]["value"]
-
-                    # Calculate traffic level
-                    traffic_ratio = traffic_duration / normal_duration if normal_duration > 0 else 1
-
-                    if traffic_ratio < 1.1:
-                        traffic_level = "light"
-                    elif traffic_ratio < 1.3:
-                        traffic_level = "moderate"
-                    elif traffic_ratio < 1.5:
-                        traffic_level = "heavy"
-                    else:
-                        traffic_level = "severe"
-
-                    return {
-                        "status": "success",
-                        "normal_duration": leg["duration"]["text"],
-                        "traffic_duration": leg["duration_in_traffic"]["text"],
-                        "has_traffic": traffic_duration > normal_duration * 1.1,
-                        "traffic_level": traffic_level,
-                        "delay_minutes": int((traffic_duration - normal_duration) / 60),
-                    }
-
-            # If we didn't get traffic info, return a mock response
-            return self._generate_mock_traffic()
-        except Exception as e:
-            print(f"Error in direct traffic call: {e}")
-            return self._generate_mock_traffic()
-
-    # Utility methods
-    def _is_coordinates(self, location: str) -> bool:
+    def _is_coordinates(self, location: Union[str, Dict[str, float]]) -> bool:
         """Check if a string represents coordinates (lat,lng)"""
+        if isinstance(location, dict):
+            return "lat" in location and "lng" in location
+
         try:
             parts = location.split(",")
             if len(parts) != 2:
@@ -387,110 +333,3 @@ class NavigationHandler:
             return -90 <= lat <= 90 and -180 <= lng <= 180
         except (ValueError, TypeError):
             return False
-
-    # Mock response generators for when API keys are missing
-    def _generate_mock_directions(self, origin: str, destination: str, mode: str) -> Dict[str, Any]:
-        """Generate a mock directions response"""
-        print("Generating mock directions response")
-        return {
-            "status": "OK",
-            "routes": [
-                {
-                    "summary": f"Route from {origin} to {destination}",
-                    "distance": {"text": "5 km", "value": 5000},
-                    "duration": {"text": "15 mins", "value": 900},
-                    "start_address": origin,
-                    "end_address": destination,
-                    "start_location": {"lat": 0, "lng": 0},
-                    "end_location": {"lat": 0, "lng": 0},
-                    "steps": [
-                        {
-                            "distance": {"text": "1 km", "value": 1000},
-                            "duration": {"text": "3 mins", "value": 180},
-                            "instructions": "Head north on Main St",
-                            "start_location": {"lat": 0, "lng": 0},
-                            "end_location": {"lat": 0, "lng": 0},
-                            "maneuver": "",
-                        },
-                        {
-                            "distance": {"text": "2 km", "value": 2000},
-                            "duration": {"text": "6 mins", "value": 360},
-                            "instructions": "Turn right onto Broadway",
-                            "start_location": {"lat": 0, "lng": 0},
-                            "end_location": {"lat": 0, "lng": 0},
-                            "maneuver": "turn-right",
-                        },
-                        {
-                            "distance": {"text": "2 km", "value": 2000},
-                            "duration": {"text": "6 mins", "value": 360},
-                            "instructions": "Turn left onto Park Ave",
-                            "start_location": {"lat": 0, "lng": 0},
-                            "end_location": {"lat": 0, "lng": 0},
-                            "maneuver": "turn-left",
-                        },
-                    ],
-                }
-            ],
-        }
-
-    def _generate_mock_places(self, query: str) -> Dict[str, Any]:
-        """Generate a mock places response"""
-        print("Generating mock places response")
-        return {
-            "status": "OK",
-            "places": [
-                {
-                    "place_id": "mock_place_1",
-                    "name": f"{query} Place 1",
-                    "address": "123 Main St",
-                    "location": {"lat": 0, "lng": 0},
-                    "rating": 4.5,
-                    "user_ratings_total": 100,
-                    "types": ["point_of_interest", "establishment"],
-                },
-                {
-                    "place_id": "mock_place_2",
-                    "name": f"{query} Place 2",
-                    "address": "456 Broadway",
-                    "location": {"lat": 0, "lng": 0},
-                    "rating": 4.0,
-                    "user_ratings_total": 75,
-                    "types": ["point_of_interest", "establishment"],
-                },
-                {
-                    "place_id": "mock_place_3",
-                    "name": f"{query} Place 3",
-                    "address": "789 Park Ave",
-                    "location": {"lat": 0, "lng": 0},
-                    "rating": 3.5,
-                    "user_ratings_total": 50,
-                    "types": ["point_of_interest", "establishment"],
-                },
-            ],
-        }
-
-    def _generate_mock_geocode(self, address: str) -> Dict[str, Any]:
-        """Generate a mock geocode response"""
-        print("Generating mock geocode response")
-        return {
-            "status": "OK",
-            "results": [
-                {
-                    "formatted_address": address,
-                    "geometry": {"location": {"lat": 0, "lng": 0}},
-                    "place_id": "mock_place_id",
-                }
-            ],
-        }
-
-    def _generate_mock_traffic(self) -> Dict[str, Any]:
-        """Generate a mock traffic response"""
-        print("Generating mock traffic response")
-        return {
-            "status": "success",
-            "normal_duration": "15 mins",
-            "traffic_duration": "20 mins",
-            "has_traffic": True,
-            "traffic_level": "moderate",
-            "delay_minutes": 5,
-        }

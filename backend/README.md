@@ -65,6 +65,11 @@ The backend follows a modular architecture:
    pip install -r requirements.txt
    ```
 
+3. Set up pre-commit hooks:
+   ```bash
+   pre-commit install
+   ```
+
 ## Running the Backend
 
 Run the FastAPI server:

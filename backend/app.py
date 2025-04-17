@@ -1,6 +1,10 @@
+import logging
+import traceback
+
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from core.config import CONFIG
 from saarthi import router as saarthi_router
@@ -21,6 +25,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# Global exception handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    # Log the full traceback
+    print(f"Unhandled exception: {str(exc)}")
+    print("Traceback:")
+    print(traceback.format_exc())
+
+
+# Mount the saarthi router
 app.include_router(saarthi_router)
 
 

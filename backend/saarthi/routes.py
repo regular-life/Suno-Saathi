@@ -9,11 +9,17 @@ from modules.navigation import NavigationHandler
 
 from .schemas import (
     DirectionsRequest,
+    DirectionsResponse,
     GeocodeRequest,
+    GeocodeResponse,
     NavigationQueryRequest,
+    NavigationQueryResponse,
     PlacesRequest,
+    PlacesResponse,
     TrafficRequest,
+    TrafficResponse,
     WakeWordRequest,
+    WakeWordResponse,
 )
 
 router = APIRouter(prefix="/api")
@@ -22,63 +28,18 @@ router = APIRouter(prefix="/api")
 navigation = NavigationHandler()
 
 
-# Get API keys for frontend (only required ones, with security measures)
-@router.get("/config")
-async def get_frontend_config(request: Request):
-    """
-    Get necessary configuration for the frontend.
-    This includes required API keys and configuration.
-
-    Note: This endpoint implements security measures to prevent unauthorized access:
-    - Only allows requests from specified origins (CORS)
-    - Does not expose all API keys, only the ones needed by frontend
-    - In production, should implement additional auth measures
-    """
-    # Check if request is coming from an allowed origin
-    origin = request.headers.get("origin", "")
-    if "*" not in CONFIG.UVICORN.CORS_ORIGINS and origin not in CONFIG.UVICORN.CORS_ORIGINS:
-        raise HTTPException(status_code=403, detail="Access forbidden")
-
-    # Prepare the configuration with keys
-    config = {
-        "mapbox_token": CONFIG.API_KEYS.MAPBOX,
-        "api_urls": {
-            "directions": "/api/navigation/directions",
-            "places": "/api/navigation/places",
-            "geocode": "/api/navigation/geocode",
-            "traffic": "/api/navigation/traffic",
-            "query": "/api/navigation/query",
-            "wake": "/api/wake/detect",
-        },
-    }
-
-    config["gemini_api_key"] = CONFIG.API_KEYS.GEMINI
-
-    return config
-
-
 # Navigation API routes - consolidated endpoints (supporting both GET and POST)
-@router.get("/navigation/directions")
+@router.get("/navigation/directions", response_model=DirectionsResponse)
 async def get_directions(origin: str, destination: str, mode: str = "driving"):
     """Get directions between two locations via GET"""
     try:
         directions = navigation.get_directions(origin, destination, mode)
-        return directions
+        return DirectionsResponse(status="success", routes=directions)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/navigation/directions")
-async def post_directions(request: DirectionsRequest):
-    """Get directions between two locations via POST"""
-    try:
-        directions = navigation.get_directions(request.origin, request.destination, request.mode)
-        return directions
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/navigation/places")
+@router.get("/navigation/places", response_model=PlacesResponse)
 async def find_places(query: str, location: Optional[str] = None):
     """Find places based on a query string via GET"""
     try:
@@ -88,17 +49,7 @@ async def find_places(query: str, location: Optional[str] = None):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/navigation/places")
-async def post_find_places(request: PlacesRequest):
-    """Find places based on a query string via POST"""
-    try:
-        places = navigation.find_places(request.query, request.location)
-        return places
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/navigation/geocode")
+@router.get("/navigation/geocode", response_model=GeocodeResponse)
 async def geocode_address(address: str):
     """Geocode an address to coordinates via GET"""
     try:
@@ -108,17 +59,7 @@ async def geocode_address(address: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/navigation/geocode")
-async def post_geocode_address(request: GeocodeRequest):
-    """Geocode an address to coordinates via POST"""
-    try:
-        result = navigation.geocode_address(request.address)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/navigation/traffic")
+@router.get("/navigation/traffic", response_model=TrafficResponse)
 async def get_traffic(origin: str, destination: str):
     """Get traffic information between two points via GET"""
     try:
@@ -128,17 +69,7 @@ async def get_traffic(origin: str, destination: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/navigation/traffic")
-async def post_traffic(request: TrafficRequest):
-    """Get traffic information between two points via POST"""
-    try:
-        traffic_info = navigation.get_traffic_info(request.origin, request.destination)
-        return traffic_info
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/navigation/query")
+@router.post("/navigation/query", response_model=NavigationQueryResponse)
 async def process_navigation_query(request: NavigationQueryRequest):
     """Process a natural language navigation query"""
     if not request.query:
@@ -157,22 +88,23 @@ async def process_navigation_query(request: NavigationQueryRequest):
 
         # Extract response text
         if response and response.get("status") == "success":
-            return {
-                "query_type": "llm_processed",
-                "response": response.get("response"),
-                "processed_query": request.query,
-            }
+            return NavigationQueryResponse(
+                query_type="llm_processed",
+                response=response.get("response"),
+                processed_query=request.query,
+            )
 
         # Fallback to rule-based interpretation if LLM response is not successful
         query_lower = request.query.lower()
-        response_data = {
-            "query_type": "general_navigation",
-            "original_query": request.query,
-        }
+        response_data = NavigationQueryResponse(
+            query_type="general_navigation",
+            response="",
+            original_query=request.query,
+        )
 
         # Handle traffic-related queries
         if any(keyword in query_lower for keyword in ["traffic", "congestion", "jam", "busy"]):
-            response_data["query_type"] = "traffic"
+            response_data.query_type = "traffic"
 
             # Try to get actual traffic if location is provided
             if request.location and request.context and request.context.get("destination"):
@@ -181,16 +113,14 @@ async def process_navigation_query(request: NavigationQueryRequest):
                     destination = request.context.get("destination")
                     traffic_info = navigation.get_traffic_info(origin, destination)
 
-                    response_data["traffic_info"] = traffic_info
-                    response_data["response"] = (
-                        f"Traffic is {traffic_info.get('traffic_level', 'moderate')} on your route. Expected delay of {traffic_info.get('delay_minutes', '5-10')} minutes."
-                    )
+                    response_data.traffic_info = traffic_info
+                    response_data.response = f"Traffic is {traffic_info.get('traffic_level', 'moderate')} on your route. Expected delay of {traffic_info.get('delay_minutes', '5-10')} minutes."
                     return response_data
                 except Exception as e:
                     print(f"Error getting traffic info: {e}")
 
             # Fallback traffic response
-            response_data["response"] = (
+            response_data.response = (
                 "Let me check the traffic conditions for you. Please make sure your location is enabled."
             )
             return response_data
@@ -201,9 +131,9 @@ async def process_navigation_query(request: NavigationQueryRequest):
                 (keyword for keyword in ["flyover", "underpass", "bridge", "tunnel"] if keyword in query_lower),
                 "feature",
             )
-            response_data["query_type"] = "route_feature"
-            response_data["feature"] = feature
-            response_data["response"] = f"There's a {feature} ahead on your route. I'll guide you when we get closer."
+            response_data.query_type = "route_feature"
+            response_data.feature = feature
+            response_data.response = f"There's a {feature} ahead on your route. I'll guide you when we get closer."
             return response_data
 
         # Handle alternative route queries
@@ -217,10 +147,8 @@ async def process_navigation_query(request: NavigationQueryRequest):
                 "another way",
             ]
         ):
-            response_data["query_type"] = "alternative_route"
-            response_data["response"] = (
-                "I'll check for alternatives on your route. Let me analyze the traffic conditions."
-            )
+            response_data.query_type = "alternative_route"
+            response_data.response = "I'll check for alternatives on your route. Let me analyze the traffic conditions."
             return response_data
 
         # Handle nearby place queries
@@ -244,8 +172,8 @@ async def process_navigation_query(request: NavigationQueryRequest):
             )
 
             if found_type:
-                response_data["query_type"] = "nearby_place"
-                response_data["place_type"] = found_type
+                response_data.query_type = "nearby_place"
+                response_data.place_type = found_type
 
                 # Try to find places if location is provided
                 if request.location:
@@ -256,24 +184,22 @@ async def process_navigation_query(request: NavigationQueryRequest):
                             search_term = "gas station"
 
                         places = navigation.find_places(search_term, location_str)
-                        response_data["places"] = places
+                        response_data.places = places
 
                         if places.get("status") == "OK" and places.get("places"):
                             place_count = min(3, len(places.get("places", [])))
-                            response_data["response"] = (
-                                f"I found {place_count} {search_term}s nearby. The closest one is {places['places'][0]['name']}."
-                            )
+                            response_data.response = f"I found {place_count} {search_term}s nearby. The closest one is {places['places'][0]['name']}."
                             return response_data
                     except Exception as e:
                         print(f"Error finding places: {e}")
 
-                response_data["response"] = (
+                response_data.response = (
                     f"I'll help you find {found_type}s nearby. Please make sure your location is enabled."
                 )
                 return response_data
 
         # Default response
-        response_data["response"] = (
+        response_data.response = (
             "I'll help you with your navigation needs. Please provide more details or ask a specific question."
         )
         return response_data
@@ -283,7 +209,7 @@ async def process_navigation_query(request: NavigationQueryRequest):
 
 
 # Wake word routes
-@router.post("/wake/detect")
+@router.post("/wake/detect", response_model=WakeWordResponse)
 async def detect_wake_word(request: WakeWordRequest):
     """Detect wake word in text using improved method"""
     try:
@@ -321,14 +247,14 @@ async def detect_wake_word(request: WakeWordRequest):
         elif variant_detected:
             confidence = 0.85
 
-        return {
-            "detected": primary_detected or variant_detected,
-            "confidence": confidence,
-            "text": request.text,
-            "wake_word_found": next(
+        return WakeWordResponse(
+            detected=primary_detected or variant_detected,
+            confidence=confidence,
+            text=request.text,
+            wake_word_found=next(
                 (word for word in primary_wake_words + variant_wake_words if word in text_lower),
                 None,
             ),
-        }
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid request: {str(e)}")

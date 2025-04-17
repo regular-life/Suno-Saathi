@@ -68,10 +68,10 @@ class NavigationHandler:
                 language="en",
                 units="metric",
             )
-            return self._process_directions_response(directions)
+            return directions
         except Exception as e:
             print(f"Error getting directions: {e}")
-            return {"status": "error", "error": str(e), "routes": []}
+            raise e
 
     def find_places(
         self,
@@ -243,50 +243,6 @@ class NavigationHandler:
                 "has_traffic": False,
                 "traffic_level": "unknown",
             }
-
-    # Helper methods for processing API responses
-    def _process_directions_response(self, directions: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Process and enhance the directions API response"""
-        if not directions:
-            return {"status": "ZERO_RESULTS", "routes": []}
-
-        result = {"status": "OK", "routes": []}
-
-        for route in directions:
-            processed_route = {
-                "summary": route.get("summary", ""),
-                "distance": route["legs"][0]["distance"],
-                "duration": route["legs"][0]["duration"],
-                "start_address": route["legs"][0]["start_address"],
-                "end_address": route["legs"][0]["end_address"],
-                "start_location": route["legs"][0]["start_location"],
-                "end_location": route["legs"][0]["end_location"],
-                "steps": [],
-                "warnings": route.get("warnings", []),
-                "copyrights": route.get("copyrights", ""),
-            }
-
-            # Add traffic duration if available
-            if "duration_in_traffic" in route["legs"][0]:
-                processed_route["duration_in_traffic"] = route["legs"][0]["duration_in_traffic"]
-
-            # Process steps
-            for step in route["legs"][0]["steps"]:
-                processed_step = {
-                    "distance": step["distance"],
-                    "duration": step["duration"],
-                    "instructions": step["html_instructions"],
-                    "start_location": step["start_location"],
-                    "end_location": step["end_location"],
-                    "maneuver": step.get("maneuver", ""),
-                    "travel_mode": step.get("travel_mode", ""),
-                    "polyline": step.get("polyline", {}),
-                }
-                processed_route["steps"].append(processed_step)
-
-            result["routes"].append(processed_route)
-
-        return result
 
     def _process_places_response(self, places_result: Dict[str, Any]) -> Dict[str, Any]:
         """Process and enhance the places API response"""

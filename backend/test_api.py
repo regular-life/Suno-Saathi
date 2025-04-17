@@ -2,7 +2,7 @@ import json
 
 import requests
 
-from modules.llm_interface import GeminiLLM
+from modules.llm_interface import generate_reply
 
 # Base URL for the API
 BASE_URL = "http://localhost:8000"
@@ -32,8 +32,7 @@ def test_navigation_query():
 
 def test_llm_generate():
     """Create an LLM and test its generations"""
-    llm = GeminiLLM()
-    response = llm.generate_reply("How's the traffic?")
+    response = generate_reply("How's the traffic?")
     print("LLM generation:", response)
 
 

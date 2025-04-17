@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
 
 from core.config import CONFIG
-from modules.llm_interface import GeminiLLM
+from modules.llm_interface import generate_reply
 from modules.navigation import NavigationHandler
 
 from .schemas import (
@@ -20,14 +20,6 @@ router = APIRouter(prefix="/api")
 
 # Initialize navigation handler
 navigation = NavigationHandler()
-
-# Initialize LLM interface if API key is available
-llm = None
-if CONFIG.API_KEYS.GEMINI:
-    try:
-        llm = GeminiLLM()
-    except Exception as e:
-        print(f"Warning: Failed to initialize LLM: {e}")
 
 
 # Get API keys for frontend (only required ones, with security measures)
@@ -153,27 +145,25 @@ async def process_navigation_query(request: NavigationQueryRequest):
         raise HTTPException(status_code=400, detail="Query is required")
 
     try:
-        # If LLM is available, use it to interpret the query
-        if llm:
-            # Create context-aware prompt
-            context_text = ""
-            if request.context:
-                context_text = f"Navigation Context: {json.dumps(request.context)}\n"
+        # Create context-aware prompt
+        context_text = ""
+        if request.context:
+            context_text = f"Navigation Context: {json.dumps(request.context)}\n"
 
-            prompt = f"{context_text}User's navigation query: {request.query}\n\nInterpret this navigation-related query and provide a helpful response:"
+        prompt = f"{context_text}User's navigation query: {request.query}\n\nInterpret this navigation-related query and provide a helpful response:"
 
-            # Generate response using LLM
-            response = llm.generate_reply(prompt)
+        # Generate response using LLM
+        response = generate_reply(prompt)
 
-            # Extract response text
-            if response and response.get("status") == "success":
-                return {
-                    "query_type": "llm_processed",
-                    "response": response.get("response"),
-                    "processed_query": request.query,
-                }
+        # Extract response text
+        if response and response.get("status") == "success":
+            return {
+                "query_type": "llm_processed",
+                "response": response.get("response"),
+                "processed_query": request.query,
+            }
 
-        # Fallback to rule-based interpretation if LLM is not available
+        # Fallback to rule-based interpretation if LLM response is not successful
         query_lower = request.query.lower()
         response_data = {
             "query_type": "general_navigation",

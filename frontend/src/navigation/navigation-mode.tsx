@@ -12,8 +12,7 @@ import classes from './navigation-mode.module.scss';
 import { useNavigationStore } from '@/navigation/navigation-store';
 import { voiceService } from '@/voice/voice-service';
 import { MapContainer } from '@/map/map';
-import { apiService } from '@/api/api-service';
-
+import { useNavigationQuery } from './navigation.query';
 // Format helpers
 const formatDistance = (distance: { text: string; value: number }) => distance.text;
 
@@ -150,22 +149,25 @@ export function NavigationMode() {
       };
 
       // Process the navigation query through the API
-      const response = await apiService.processNavigationPrompt(userMessage, navigationContext);
+      const response = await useNavigationQuery.apiCall({
+        query: userMessage,
+        location: currentLocation
+      });
       
-      if (response && response.response) {
-        setMessages(prev => [...prev, { type: 'assistant', text: response.response }]);
-        voiceService.speak(response.response);
+      if (response && response.data) {
+        setMessages(prev => [...prev, { type: 'assistant', text: response.data.response }]);
+        voiceService.speak(response.data.response);
 
         // Handle specific query types
-        if (response.query_type === 'traffic' && response.traffic_info) {
+        if (response.data.query_type === 'traffic' && response.data.traffic_info) {
           // Update UI with traffic information
-          console.log('Traffic info:', response.traffic_info);
-        } else if (response.query_type === 'nearby_place' && response.places) {
+          console.log('Traffic info:', response.data.traffic_info);
+        } else if (response.data.query_type === 'nearby_place' && response.data.places) {
           // Update UI with nearby places
-          console.log('Nearby places:', response.places);
-        } else if (response.query_type === 'route_feature') {
+          console.log('Nearby places:', response.data.places);
+        } else if (response.data.query_type === 'route_feature') {
           // Handle route feature information
-          console.log('Route feature:', response.feature);
+          console.log('Route feature:', response.data.feature);
         }
       } else {
         throw new Error('Invalid response from server');

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { IconCar, IconWalk, IconBike, IconPlayerPlay, IconX, IconCurrentLocation, IconSearch } from '@tabler/icons-react';
 import classes from './navigation-panel.module.scss';
-import { useNavigationStore } from './navigation-store';
+import { useNavigationStore, Marker } from './navigation-store';
 import { useNavigationPlaces } from './navigation.query';
 import { Route, RouteStep } from './navigation-store';
 import { decode } from '@googlemaps/polyline-codec';
@@ -194,9 +194,29 @@ export function NavigationPanel() {
       });
 
       const { latitude, longitude } = position.coords;
+      const location = { lat: latitude, lng: longitude };
+      
       setOrigin('Current Location');
-      setOriginCoords({ lat: latitude, lng: longitude });
+      setOriginCoords(location);
       setError(null);
+
+      // Update markers to include current location
+      const currentMarkers = useNavigationStore.getState().markers;
+      const newMarkers = currentMarkers.filter((marker: Marker) => marker.id !== 'origin');
+      newMarkers.push({
+        id: 'origin',
+        position: location,
+        title: 'Current Location',
+        color: '#4285F4', // Google Blue
+        label: 'A'
+      });
+      setMarkers(newMarkers);
+
+      // Center map on current location
+      if (mapInstance) {
+        mapInstance.setCenter(location);
+        mapInstance.setZoom(15);
+      }
     } catch (error) {
       console.error('Error getting current location:', error);
       setError('Could not get your current location');
@@ -212,25 +232,31 @@ export function NavigationPanel() {
     if (isOrigin) {
       setOrigin(place.name);
       setOriginCoords(location);
-      // Add origin marker
-      setMarkers([{
+      // Update markers to include both origin and destination
+      const currentMarkers = useNavigationStore.getState().markers;
+      const newMarkers = currentMarkers.filter((marker: Marker) => marker.id !== 'origin');
+      newMarkers.push({
         id: 'origin',
         position: location,
         title: 'Origin: ' + place.name,
         color: '#4285F4', // Google Blue
         label: 'A'
-      }]);
+      });
+      setMarkers(newMarkers);
     } else {
       setDestination(place.name);
       setDestinationCoords(location);
-      // Add destination marker
-      setMarkers([{
+      // Update markers to include both origin and destination
+      const currentMarkers = useNavigationStore.getState().markers;
+      const newMarkers = currentMarkers.filter((marker: Marker) => marker.id !== 'destination');
+      newMarkers.push({
         id: 'destination',
         position: location,
         title: 'Destination: ' + place.name,
         color: '#EA4335', // Google Red
         label: 'B'
-      }]);
+      });
+      setMarkers(newMarkers);
     }
 
     // Center map on selected location

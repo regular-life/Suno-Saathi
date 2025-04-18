@@ -96,15 +96,10 @@ def process_navigation_prompt(user_query: str, navigation_context: Optional[Dict
     # Create a contextualized navigation prompt
     context = "You are navigating and need to provide clear, concise directions. "
 
-    if navigation_context:
-        if "current_location" in navigation_context:
-            context += f"Current location: {navigation_context['current_location']}. "
-        if "destination" in navigation_context:
-            context += f"Destination: {navigation_context['destination']}. "
-        if "next_turn" in navigation_context:
-            context += f"Next turn: {navigation_context['next_turn']}. "
-        if "distance_remaining" in navigation_context:
-            context += f"Distance remaining: {navigation_context['distance_remaining']}. "
+    context += f"Current location: {navigation_context['current_location']}. "
+    context += f"Destination: {navigation_context['destination']}. "
+    context += f"Next turn: {navigation_context['next_turn']}. "
+    context += f"Distance remaining: {navigation_context['distance_remaining']}. "
 
     context += "\nKeep your response under 15 words, focused on the immediate navigation need."
 

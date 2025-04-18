@@ -279,7 +279,9 @@ class NavigationHandler:
         """Check if a string represents coordinates (lat,lng)"""
         if isinstance(location, dict):
             return "lat" in location and "lng" in location
-
+        if not isinstance(location, str):
+            return False
+        
         try:
             parts = location.split(",")
             if len(parts) != 2:
@@ -287,5 +289,5 @@ class NavigationHandler:
 
             lat, lng = float(parts[0]), float(parts[1])
             return -90 <= lat <= 90 and -180 <= lng <= 180
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, AttributeError):
             return False

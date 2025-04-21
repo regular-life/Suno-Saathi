@@ -332,17 +332,6 @@ export function NavigationPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div className={classes.panel}>
-      <div className={classes.header}>
-        <h1>Directions</h1>
-        <button 
-          className={classes.closeButton} 
-          onClick={closeNavbar}
-          aria-label="Close directions"
-        >
-          <IconArrowLeft size={20} />
-        </button>
-      </div>
-
       <div className={classes.form}>
         <SearchInput
           value={origin}

@@ -10,7 +10,17 @@ import { decode } from '@googlemaps/polyline-codec';
 // Map component that handles the actual map instance and route display
 function MapComponent() {
   const map = useMap();
-  const { setMapInstance, markers, currentRoute, isNavigating } = useNavigationStore();
+  const { 
+    setMapInstance, 
+    markers, 
+    currentRoute, 
+    isNavigating,
+    setMarkers,
+    origin,
+    destination,
+    getDirections,
+    currentStep
+  } = useNavigationStore();
   const polylineRef = useRef<google.maps.Polyline | null>(null);
 
   useEffect(() => {
@@ -18,6 +28,62 @@ function MapComponent() {
       setMapInstance(map);
     }
   }, [map, setMapInstance]);
+
+  // Handle marker drag end event - updates location and recalculates route
+  const handleMarkerDragEnd = async (markerId: string, newPosition: google.maps.LatLng) => {
+    // Only process origin marker (user location)
+    if (markerId !== 'origin') return;
+    
+    // Update the marker position in the store
+    const updatedMarkers = markers.map(marker => {
+      if (marker.id === markerId) {
+        return {
+          ...marker,
+          position: { 
+            lat: newPosition.lat(), 
+            lng: newPosition.lng() 
+          }
+        };
+      }
+      return marker;
+    });
+    
+    setMarkers(updatedMarkers);
+    
+    // Mock a position object for the navigation system
+    const mockPosition = {
+      coords: {
+        latitude: newPosition.lat(),
+        longitude: newPosition.lng(),
+        accuracy: 5,
+        heading: null,
+        speed: null,
+        altitude: null,
+        altitudeAccuracy: null
+      },
+      timestamp: Date.now()
+    };
+    
+    // If we have an active route and destination, recalculate the route
+    if (destination && isNavigating && currentRoute) {
+      // Get updated directions with the new origin
+      await getDirections({
+        origin: `${newPosition.lat()},${newPosition.lng()}`,
+        destination: destination
+      });
+      
+      // Create a custom event to notify the navigation system about the position change
+      const positionUpdateEvent = new CustomEvent('userPositionChanged', {
+        detail: { 
+          position: mockPosition,
+          newPosition: { lat: newPosition.lat(), lng: newPosition.lng() } 
+        }
+      });
+      
+      // Dispatch the event for other components to react to
+      window.dispatchEvent(positionUpdateEvent);
+    }
+  };
 
   // Create and update the route polyline
   useEffect(() => {
@@ -68,6 +134,13 @@ function MapComponent() {
           key={marker.id}
           position={marker.position}
           title={marker.title}
+          draggable={marker.label === 'A'} // Make only user location draggable
+          onDragEnd={
+            marker.label === 'A' 
+            ? (e: google.maps.MapMouseEvent) => 
+                e.latLng && handleMarkerDragEnd(marker.id, e.latLng)
+            : undefined
+          }
         >
           <div
             style={{
@@ -82,7 +155,8 @@ function MapComponent() {
               justifyContent: 'center',
               color: 'white',
               fontWeight: 'bold',
-              fontSize: '12px'
+              fontSize: '12px',
+              cursor: marker.label === 'A' ? 'grab' : 'default'
             }}
           >
             {marker.label}
@@ -164,43 +238,43 @@ export function MapContainer({ hideSearch = false }: { hideSearch?: boolean }) {
   return (
     <div className={classes.map}>
       {!hideSearch && (
-        <div className={classes.searchBar}>
-          <input
-            type="text"
-            className={classes.searchInput}
-            placeholder="Search for a location"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyPress={handleKeyPress}
-            onFocus={() => searchResults.length > 0 && setShowResults(true)}
-          />
-          <button className={classes.searchButton} onClick={handleSearch}>
-            <IconSearch size={20} />
-          </button>
-          
-          {showResults && searchResults.length > 0 && (
-            <div className={classes.searchResults}>
-              {searchResults.map((place) => (
-                <div 
-                  key={place.place_id} 
-                  className={classes.searchResultItem}
-                  onClick={() => handleSelectPlace(place)}
-                >
-                  <div className={classes.placeName}>{place.name}</div>
-                  <div className={classes.placeAddress}>
-                    {place.address || place.vicinity || "Unknown Address"}
-                  </div>
+      <div className={classes.searchBar}>
+        <input
+          type="text"
+          className={classes.searchInput}
+          placeholder="Search for a location"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyPress={handleKeyPress}
+          onFocus={() => searchResults.length > 0 && setShowResults(true)}
+        />
+        <button className={classes.searchButton} onClick={handleSearch}>
+          <IconSearch size={20} />
+        </button>
+        
+        {showResults && searchResults.length > 0 && (
+          <div className={classes.searchResults}>
+            {searchResults.map((place) => (
+              <div 
+                key={place.place_id} 
+                className={classes.searchResultItem}
+                onClick={() => handleSelectPlace(place)}
+              >
+                <div className={classes.placeName}>{place.name}</div>
+                <div className={classes.placeAddress}>
+                  {place.address || place.vicinity || "Unknown Address"}
                 </div>
-              ))}
-            </div>
-          )}
-          
-          {isLoading && (
-            <div className={classes.searchLoading}>
-              Loading results...
-            </div>
-          )}
-        </div>
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {isLoading && (
+          <div className={classes.searchLoading}>
+            Loading results...
+          </div>
+        )}
+      </div>
       )}
 
       <APIProvider apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}>

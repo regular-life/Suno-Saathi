@@ -125,7 +125,7 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
   }),
   
   // UI State
-  isSidebarOpen: false,
+  isSidebarOpen: true,
   toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
   setIsSidebarOpen: (isOpen) => set({ isSidebarOpen: isOpen }),
   

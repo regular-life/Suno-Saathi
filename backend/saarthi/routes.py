@@ -109,7 +109,7 @@ async def process_navigation_query(request: NavigationQueryRequest):
             # Create new session with navigation-specific prompt
             prompt = f"{context_text}User's navigation query: {request.query}\n\nInterpret this navigation-related query and provide a helpful response:"
 
-            # Generate response using LLM without session (legacy mode)
+                # Generate response using LLM without session (legacy mode)
             response = generate_reply(prompt)
 
         # Extract response text

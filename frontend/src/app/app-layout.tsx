@@ -1,6 +1,6 @@
 import { AppShell } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconMicrophone, IconDirections, IconMapPin } from '@tabler/icons-react';
+import { IconMicrophone, IconDirections, IconMapPin, IconX } from '@tabler/icons-react';
 import classes from './app-layout.module.scss';
 import { MapContainer } from '@/map/map';
 import { VoiceModal } from '@/voice/voice-modal';
@@ -71,6 +71,10 @@ export function AppLayout() {
           overflow: 'hidden',
           height: '100vh',
         },
+        navbar: {
+          background: 'transparent',
+          border: 'none',
+        }
       }}
     >
       <AppShell.Navbar>
@@ -88,13 +92,26 @@ export function AppLayout() {
       <AppShell.Main>
         <div className={classes.container}>
           <div className={classes.mapContainer}>
-            <MapContainer />
+            <MapContainer hideSearch={true} />
           </div>
           
           <div className={classes.controls}>
-            <button className={classes.controlButton} onClick={handleToggleSidebar}>
-              <IconDirections size={20} />
-            </button>
+            {opened ? (
+              <button className={classes.controlButton} onClick={() => {
+                isUpdatingRef.current = true;
+                close();
+                setTimeout(() => {
+                  setIsSidebarOpen(false);
+                  isUpdatingRef.current = false;
+                }, 0);
+              }}>
+                <IconX size={20} />
+              </button>
+            ) : (
+              <button className={classes.controlButton} onClick={handleToggleSidebar}>
+                <IconDirections size={20} />
+              </button>
+            )}
           </div>
           
           <NavigationMode />

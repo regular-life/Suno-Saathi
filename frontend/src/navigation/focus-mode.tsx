@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, TouchEvent } from 'react';
 import { 
   IconVolume, 
   IconVolumeOff, 
@@ -16,25 +16,69 @@ import {
 import { Box, Text, Stack, Transition } from '@mantine/core';
 import { useNavigationStore } from '@/navigation/navigation-store';
 import { voiceService } from '@/voice/voice-service';
+import classes from './navigation-mode.module.scss';
+
+// Get the appropriate pulsation rate based on distance
+const getIconPulsationRate = (distance: { text: string; value: number }) => {
+  if (distance.value <= 0) {
+    return null; // No pulsation when at destination (0 meters)
+  } else if (distance.value < 50) {
+    return '0.8s'; // Very fast pulse when extremely close (under 50m)
+  } else if (distance.value < 100) {
+    return '1.0s'; // Fast pulse when close (50-100m)
+  } else if (distance.value < 200) {
+    return '1.5s'; // Medium pulse when approaching (100-200m)
+  } else {
+    return '2.5s'; // Slow, steady pulse for regular navigation
+  }
+};
 
 // Helper to get the right icon based on the maneuver type
-const getManeuverIcon = (type: string | null | undefined, shouldPulsate: boolean = false) => {
-  const baseSize = 80;
-  const iconStyle = shouldPulsate ? { animation: 'pulsate 1.5s infinite' } : {};
+const getManeuverIcon = (type: string | null | undefined, shouldPulsate: boolean = false, distance?: { text: string; value: number }) => {
+  // Use useState to create pulsating effect with size changes
+  const [iconSize, setIconSize] = useState(80);
   
-  if (!type) return <IconArrowUp size={baseSize} color="black" style={iconStyle} />;
+  // Set up pulsation effect using useEffect
+  useEffect(() => {
+    if (!shouldPulsate && (!distance || distance.value === 0)) return;
+    
+    // Determine pulse speed based on distance
+    let interval = 2000; // default slow pulse
+    if (distance) {
+      if (distance.value < 50) interval = 500; // very fast when close
+      else if (distance.value < 100) interval = 800; // fast when approaching
+      else if (distance.value < 200) interval = 1200; // medium when nearing
+    }
+    
+    // Create pulse effect by changing size
+    let growing = false;
+    const pulseTimer = setInterval(() => {
+      setIconSize(current => {
+        // Switch between growing and shrinking
+        if (current >= 92) growing = false;
+        if (current <= 68) growing = true;
+        
+        return growing ? current + 4 : current - 4;
+      });
+    }, 100);
+    
+    return () => clearInterval(pulseTimer);
+  }, [shouldPulsate, distance]);
+
+  // Determine which icon to display based on maneuver type
+  if (!type) return <IconArrowUp size={iconSize} color="black" />;
   
   switch (type) {
     case 'turn-right':
     case 'turn-slight-right':
     case 'turn-sharp-right':
-      return <IconArrowRight size={baseSize} color="black" style={iconStyle} />;
+      return <IconArrowRight size={iconSize} color="black" />;
     case 'turn-left':
     case 'turn-slight-left':
     case 'turn-sharp-left':
-      return <IconArrowLeft size={baseSize} color="black" style={iconStyle} />;
+      return <IconArrowLeft size={iconSize} color="black" />;
     default:
-      return <IconArrowUp size={baseSize} color="black" style={iconStyle} />;
+      return <IconArrowUp size={iconSize} color="black" />;
   }
 };
 
@@ -112,7 +156,10 @@ export function FocusMode({ onExit, onBack, onSwitchToMap }: FocusModeProps) {
   const [isListening, setIsListening] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [showAllDirections, setShowAllDirections] = useState(false);
   const statusTimeoutRef = useRef<number | null>(null);
+  const footerRef = useRef<HTMLDivElement>(null);
+  const touchStartY = useRef<number | null>(null);
   
   const { 
     isNavigating, 
@@ -168,8 +215,8 @@ export function FocusMode({ onExit, onBack, onSwitchToMap }: FocusModeProps) {
   const currentManeuver = currentRoute.legs[0]?.steps[currentStep] || null;
   const nextManeuver = currentRoute.legs[0]?.steps[currentStep + 1] || null;
   
-  // Check if we're near the next maneuver (< 50m) to highlight it
-  const shouldPulsateIcon = currentManeuver && isNearNextManeuver(currentManeuver.distance);
+  // Pulsation is controlled by distance (updated)
+  const shouldPulsateIcon = currentManeuver && (getIconPulsationRate(currentManeuver.distance) !== null);
   
   // Estimated time left based on the route data
   const estimatedTimeLeft = currentRoute.legs[0]?.duration.text || '';
@@ -273,6 +320,36 @@ export function FocusMode({ onExit, onBack, onSwitchToMap }: FocusModeProps) {
     }
   };
   
+  // Handle touch start event
+  const handleTouchStart = (e: TouchEvent<HTMLDivElement>) => {
+    touchStartY.current = e.touches[0].clientY;
+  };
+  
+  // Handle touch move event
+  const handleTouchMove = (e: TouchEvent<HTMLDivElement>) => {
+    if (touchStartY.current === null) return;
+    
+    const touchY = e.touches[0].clientY;
+    const diff = touchStartY.current - touchY;
+    
+    // Swipe up to show directions
+    if (diff > 50 && !showAllDirections) {
+      setShowAllDirections(true);
+      touchStartY.current = null;
+    }
+    
+    // Swipe down to hide directions
+    else if (diff < -50 && showAllDirections) {
+      setShowAllDirections(false);
+      touchStartY.current = null;
+    }
+  };
+  
+  // Handle touch end event
+  const handleTouchEnd = () => {
+    touchStartY.current = null;
+  };
+  
   return (
     <Box
       style={{
@@ -363,7 +440,7 @@ export function FocusMode({ onExit, onBack, onSwitchToMap }: FocusModeProps) {
                 margin: '30px 0'
               }}
             >
-              {getManeuverIcon(currentManeuver.maneuver, shouldPulsateIcon)}
+              {getManeuverIcon(currentManeuver.maneuver, false, currentManeuver.distance)}
             </Box>
             
             <Text 
@@ -371,7 +448,7 @@ export function FocusMode({ onExit, onBack, onSwitchToMap }: FocusModeProps) {
                 fontSize: '72px', 
                 fontWeight: 'bold', 
                 marginTop: '20px', 
-                color: shouldPulsateIcon ? '#FF3B30' : 'black'
+                color: currentManeuver.distance.value < 50 ? '#FF3B30' : 'black'
               }}
             >
               {formatDistance(currentManeuver.distance)}
@@ -381,106 +458,85 @@ export function FocusMode({ onExit, onBack, onSwitchToMap }: FocusModeProps) {
       </Box>
       
       {/* Footer with next direction and controls */}
-      <Box
-        style={{
-          borderTop: '1px solid rgba(0, 0, 0, 0.1)',
-          padding: '15px',
-          backgroundColor: 'rgba(0, 0, 0, 0.05)'
-        }}
+      <div 
+        ref={footerRef}
+        className={`${classes.footer} ${showAllDirections ? classes.expanded : ''}`}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
+        {/* Swipe handle */}
+        <div 
+          className={classes.swipeHandle}
+          onClick={() => setShowAllDirections(!showAllDirections)}
+        >
+          {showAllDirections ? <IconChevronDown size={20} /> : <IconChevronUp size={20} />}
+        </div>
+        
         {/* Next maneuver info */}
         {nextManeuver ? (
-          <Box
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '15px'
-            }}
-          >
-            <Box style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Text style={{ fontSize: '14px', color: 'rgba(0, 0, 0, 0.6)' }}>Next:</Text>
+          <div className={classes.nextManeuver}>
+            <div className={classes.nextManeuverIcon}>
+              <span className={classes.nextLabel}>Next:</span>
               {getNextManeuverIcon(nextManeuver.maneuver)}
-            </Box>
+            </div>
             
-            <Text style={{ fontSize: '14px', fontWeight: 'normal', color: 'black', flex: 1, marginLeft: '10px' }}>
+            <div className={classes.nextManeuverText}>
               {getInstructionText(nextManeuver.html_instructions)}
-            </Text>
+            </div>
             
-            <Text style={{ fontSize: '14px', color: 'black', fontWeight: 'bold' }}>
+            <div className={classes.nextManeuverDistance}>
               {formatDistance(nextManeuver.distance)}
-            </Text>
-          </Box>
+            </div>
+          </div>
         ) : (
-          <Box
-            style={{
-              textAlign: 'center',
-              marginBottom: '15px',
-              color: 'rgba(0, 0, 0, 0.6)',
-              fontSize: '14px'
-            }}
-          >
+          <div className={classes.arrivingText}>
             Arriving at destination
-          </Box>
+          </div>
+        )}
+        
+        {/* All directions (visible when expanded) */}
+        {showAllDirections && (
+          <div className={classes.directionsList}>
+            {currentRoute && currentRoute.legs && currentRoute.legs[0]?.steps.map((step, index) => (
+              <div
+                key={index}
+                className={`${classes.directionStep} ${index === currentStep ? classes.active : ''}`}
+              >
+                <div className={classes.stepNumber}>{index + 1}</div>
+                <div
+                  className={classes.stepInstruction}
+                  dangerouslySetInnerHTML={{ __html: step.html_instructions }}
+                />
+                <div className={classes.stepDistance}>{formatDistance(step.distance)}</div>
+              </div>
+            ))}
+          </div>
         )}
         
         {/* Control buttons */}
-        <Box
-          style={{
-            display: 'flex',
-            justifyContent: 'space-around',
-            alignItems: 'center'
-          }}
-        >
-          <Box
-            style={{
-              width: '50px',
-              height: '50px',
-              borderRadius: '50%',
-              background: 'rgba(0, 0, 0, 0.1)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer'
-            }}
+        <div className={classes.controls}>
+          <button 
+            className={classes.mapModeButton}
             onClick={onSwitchToMap}
+            title="Switch to Map Mode"
           >
-            <IconMap size={24} color="black" />
-          </Box>
+            <IconMap size={24} />
+          </button>
           
-          <Box
-            style={{
-              width: '50px',
-              height: '50px',
-              borderRadius: '50%',
-              background: isListening ? 'rgba(255, 80, 80, 0.5)' : 'rgba(0, 0, 0, 0.1)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              border: isListening ? '2px solid rgba(255, 80, 80, 0.8)' : 'none',
-              animation: isListening ? 'pulse 1.5s infinite' : 'none',
-              transition: 'all 0.2s ease'
-            }}
+          <button 
+            className={`${classes.micButton} ${isListening ? classes.active : ''}`}
             onClick={handleVoiceButtonClick}
           >
-            <IconMicrophone size={24} color="black" />
-          </Box>
-        </Box>
+            <IconMicrophone size={24} />
+          </button>
+        </div>
         
         {/* Hint text */}
-        <Text
-          style={{
-            width: '100%',
-            padding: '10px 0 0',
-            fontSize: '12px',
-            textAlign: 'center',
-            color: 'rgba(0, 0, 0, 0.5)'
-          }}
-        >
+        <div className={classes.hintText}>
           Say "Hey Saarthi" to activate voice assistant
-        </Text>
-      </Box>
+        </div>
+      </div>
       
       {/* Status message overlay (when active) */}
       <Transition

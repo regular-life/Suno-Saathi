@@ -1,10 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, TouchEvent } from 'react';
 import { 
   IconArrowBack, 
   IconMicrophone,
   IconFocus,
   IconVolume,
-  IconVolumeOff
+  IconVolumeOff,
+  IconChevronUp,
+  IconChevronDown,
+  IconArrowNarrowUp,
+  IconArrowNarrowLeft,
+  IconArrowNarrowRight,
+  IconPlayerPlay,
+  IconPlayerPause
 } from '@tabler/icons-react';
 import classes from './navigation-mode.module.scss';
 import { useNavigationStore } from '@/navigation/navigation-store';
@@ -125,6 +132,16 @@ export function NavigationMode() {
   const [showFocusMode, setShowFocusMode] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [showAllDirections, setShowAllDirections] = useState(false);
+  const footerRef = useRef<HTMLDivElement>(null);
+  const touchStartY = useRef<number | null>(null);
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [simulationSpeed, setSimulationSpeed] = useState(1); // Speed multiplier
+  const [isPaused, setIsPaused] = useState(false);
+  const simulationInterval = useRef<number | null>(null);
+  const simulationStepRef = useRef(0);
+  const lastPositionRef = useRef<google.maps.LatLng | null>(null);
+  const lastHeadingRef = useRef<number>(0);
   
   const { 
     isNavigating, 
@@ -134,7 +151,7 @@ export function NavigationMode() {
     endNavigation,
     setMapInstance: storeSetMapInstance
   } = useNavigationStore();
-
+  
   // Set up geolocation watching
   useEffect(() => {
     // Only set up geolocation if we're navigating and not in focus mode
@@ -191,10 +208,59 @@ export function NavigationMode() {
       );
     }
     
+    // Setup listener for custom position change events (from marker drag)
+    const handlePositionChange = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const { position, newPosition } = customEvent.detail;
+      
+      // Update user position state with the mock position
+      setUserPosition(position);
+      
+      // Update map view if mapInstance is available
+      if (mapInstance) {
+        const userLatLng = new google.maps.LatLng(
+          newPosition.lat,
+          newPosition.lng
+        );
+        
+        // Center on the new position
+        mapInstance.setCenter(userLatLng);
+        
+        // Set navigation view settings
+        mapInstance.setZoom(19);
+        
+        // Try to determine heading based on the route
+        if (position) {
+          const heading = getRouteHeading(position);
+          
+          if (heading !== null) {
+            setUserHeading(heading);
+            mapInstance.setHeading(heading);
+            mapInstance.setTilt(60);
+          }
+        }
+        
+        // Create a LatLng object for metrics calculations
+        const newPosLatLng = new google.maps.LatLng(newPosition.lat, newPosition.lng);
+        
+        // Recalculate ETA and distances based on new position
+        recalculateRouteMetrics(newPosLatLng);
+        
+        // Check if we need to update the current navigation step
+        updateNavigationStep(newPosLatLng);
+      }
+    };
+    
+    // Add event listener for custom position change event
+    window.addEventListener('userPositionChanged', handlePositionChange);
+    
     return () => {
       if (watchId !== null) {
         navigator.geolocation.clearWatch(watchId);
       }
+      
+      // Clean up event listener
+      window.removeEventListener('userPositionChanged', handlePositionChange);
     };
   }, [mapInstance, isNavigating, currentRoute, currentStep, showFocusMode]);
 
@@ -289,19 +355,455 @@ export function NavigationMode() {
     voiceService.startListening().then(transcript => {
       console.log('Voice input:', transcript);
       
-      // Process voice commands
+        // Process voice commands
       if (transcript.toLowerCase().includes('exit') || transcript.toLowerCase().includes('stop')) {
-        endNavigation();
+          endNavigation();
       } else if (transcript.toLowerCase().includes('next')) {
-        incrementStep();
+          incrementStep();
       } else if (transcript.toLowerCase().includes('focus mode') || transcript.toLowerCase().includes('focus')) {
         switchToFocusMode();
-      }
-      setIsListening(false);
+        }
+        setIsListening(false);
     }).catch(error => {
       console.error('Error processing voice input:', error);
-      setIsListening(false);
+        setIsListening(false);
     });
+  };
+
+  // Handle touch start event
+  const handleTouchStart = (e: TouchEvent<HTMLDivElement>) => {
+    touchStartY.current = e.touches[0].clientY;
+  };
+  
+  // Handle touch move event
+  const handleTouchMove = (e: TouchEvent<HTMLDivElement>) => {
+    if (touchStartY.current === null) return;
+    
+    const touchY = e.touches[0].clientY;
+    const diff = touchStartY.current - touchY;
+    
+    // Swipe up to show directions
+    if (diff > 50 && !showAllDirections) {
+      setShowAllDirections(true);
+      touchStartY.current = null;
+    }
+    
+    // Swipe down to hide directions
+    else if (diff < -50 && showAllDirections) {
+      setShowAllDirections(false);
+      touchStartY.current = null;
+    }
+  };
+  
+  // Handle touch end event
+  const handleTouchEnd = () => {
+    touchStartY.current = null;
+  };
+
+  // Simulation functions
+  const moveForward = () => {
+    if (!mapInstance) return;
+    
+    // Get current center and heading
+    const center = mapInstance.getCenter();
+    const heading = mapInstance.getHeading() || 0;
+    
+    if (!center) return;
+    
+    // Convert heading to radians
+    const headingRad = (heading * Math.PI) / 180;
+    
+    // Calculate new position (move ~10 meters in the heading direction)
+    // Earth radius in meters
+    const earthRadius = 6378137;
+    const distance = 10;
+    
+    const lat1 = center.lat() * Math.PI / 180;
+    const lng1 = center.lng() * Math.PI / 180;
+    
+    const lat2 = Math.asin(
+      Math.sin(lat1) * Math.cos(distance / earthRadius) +
+      Math.cos(lat1) * Math.sin(distance / earthRadius) * Math.cos(headingRad)
+    );
+    
+    const lng2 = lng1 + Math.atan2(
+      Math.sin(headingRad) * Math.sin(distance / earthRadius) * Math.cos(lat1),
+      Math.cos(distance / earthRadius) - Math.sin(lat1) * Math.sin(lat2)
+    );
+    
+    // Convert back to degrees
+    const newLat = lat2 * 180 / Math.PI;
+    const newLng = lng2 * 180 / Math.PI;
+    
+    // Update map center
+    const newCenter = new google.maps.LatLng(newLat, newLng);
+    mapInstance.setCenter(newCenter);
+    lastPositionRef.current = newCenter;
+    
+    // Create a mock position object to simulate GPS movement
+    const mockPosition = {
+      coords: {
+        latitude: newLat,
+        longitude: newLng,
+        accuracy: 5,
+        heading: heading,
+        speed: 5,
+        altitude: null,
+        altitudeAccuracy: null
+      },
+      timestamp: Date.now()
+    };
+    
+    // Update user position state as if this was from GPS
+    setUserPosition(mockPosition as GeolocationPosition);
+    
+    // Update the origin marker position
+    const { setMarkers, markers } = useNavigationStore.getState();
+    const updatedMarkers = markers.map(marker => {
+      if (marker.id === 'origin' || marker.label === 'A') {
+        return {
+          ...marker,
+          position: { 
+            lat: newLat, 
+            lng: newLng 
+          }
+        };
+      }
+      return marker;
+    });
+    setMarkers(updatedMarkers);
+    
+    // Check if we need to advance to the next navigation step
+    if (currentRoute && currentStep < currentRoute.legs[0].steps.length - 1) {
+      // Get the end location of the current step
+      const currentStepEnd = new google.maps.LatLng(
+        currentRoute.legs[0].steps[currentStep].end_location.lat,
+        currentRoute.legs[0].steps[currentStep].end_location.lng
+      );
+      
+      // Calculate distance to the end of the current step
+      const distanceToStepEnd = google.maps.geometry.spherical.computeDistanceBetween(
+        newCenter,
+        currentStepEnd
+      );
+      
+      // If we're close to the end of the step, move to the next one
+      if (distanceToStepEnd < 20) { // Within 20 meters
+        incrementStep();
+      }
+      
+      // Recalculate ETA and remaining distance
+      recalculateRouteMetrics(newCenter);
+    }
+  };
+  
+  const turnLeft = () => {
+    if (!mapInstance) return;
+    
+    // Get current heading and adjust by -30 degrees
+    const heading = mapInstance.getHeading() || 0;
+    const newHeading = (heading - 30) % 360;
+    
+    mapInstance.setHeading(newHeading);
+    lastHeadingRef.current = newHeading;
+    
+    // If we have a current user position, update its heading
+    if (userPosition) {
+      const updatedPosition = {
+        ...userPosition,
+        coords: {
+          ...userPosition.coords,
+          heading: newHeading
+        }
+      };
+      setUserPosition(updatedPosition);
+      setUserHeading(newHeading);
+    }
+  };
+  
+  const turnRight = () => {
+    if (!mapInstance) return;
+    
+    // Get current heading and adjust by +30 degrees
+    const heading = mapInstance.getHeading() || 0;
+    const newHeading = (heading + 30) % 360;
+    
+    mapInstance.setHeading(newHeading);
+    lastHeadingRef.current = newHeading;
+    
+    // If we have a current user position, update its heading
+    if (userPosition) {
+      const updatedPosition = {
+        ...userPosition,
+        coords: {
+          ...userPosition.coords,
+          heading: newHeading
+        }
+      };
+      setUserPosition(updatedPosition);
+      setUserHeading(newHeading);
+    }
+  };
+  
+  // Helper function to recalculate ETA and distance based on current position
+  const recalculateRouteMetrics = (currentPos: google.maps.LatLng) => {
+    if (!currentRoute || !currentRoute.legs[0]) return;
+    
+    // Calculate remaining leg distance
+    let totalRemainingDistance = 0;
+    let totalRemainingDuration = 0;
+    const steps = currentRoute.legs[0].steps;
+    
+    // We need to start from the current step and measure distance to each upcoming step
+    for (let i = currentStep; i < steps.length; i++) {
+      const stepDistance = steps[i].distance.value;
+      const stepDuration = steps[i].duration.value;
+      
+      if (i === currentStep) {
+        // For current step, calculate the actual remaining distance
+        const stepEndPos = new google.maps.LatLng(
+          steps[i].end_location.lat,
+          steps[i].end_location.lng
+        );
+        
+        const distanceToStepEnd = google.maps.geometry.spherical.computeDistanceBetween(
+          currentPos,
+          stepEndPos
+        );
+        
+        // Add the partial remaining distance and time
+        const completionRatio = 1 - (distanceToStepEnd / stepDistance);
+        totalRemainingDistance += distanceToStepEnd;
+        totalRemainingDuration += stepDuration * (1 - completionRatio);
+      } else {
+        // For future steps, add the full distance and duration
+        totalRemainingDistance += stepDistance;
+        totalRemainingDuration += stepDuration;
+      }
+    }
+    
+    // Update the remaining distance and time in the store
+    const remainingDistanceText = formatDistanceValue(totalRemainingDistance);
+    const remainingTimeText = formatDurationValue(totalRemainingDuration);
+    
+    // Update the navigation store
+    useNavigationStore.setState({
+      distanceRemaining: remainingDistanceText,
+      timeRemaining: remainingTimeText
+    });
+  };
+  
+  // Helper function to format distance value (in meters) to text
+  const formatDistanceValue = (meters: number) => {
+    if (meters < 1000) {
+      return `${Math.round(meters)} m`;
+    } else {
+      return `${(meters / 1000).toFixed(1)} km`;
+    }
+  };
+  
+  // Helper function to format duration value (in seconds) to text
+  const formatDurationValue = (seconds: number) => {
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) {
+      return `${minutes} min`;
+    } else {
+      const hours = Math.floor(minutes / 60);
+      const remainingMinutes = minutes % 60;
+      return `${hours} hr ${remainingMinutes} min`;
+    }
+  };
+  
+  const toggleSimulation = () => {
+    setIsSimulating(!isSimulating);
+    setIsPaused(false);
+    
+    // If turning simulation off, clear the interval
+    if (isSimulating && simulationInterval.current) {
+      window.clearInterval(simulationInterval.current);
+      simulationInterval.current = null;
+    }
+  };
+  
+  const togglePause = () => {
+    setIsPaused(!isPaused);
+    
+    if (!isPaused && simulationInterval.current) {
+      // Pause by clearing the interval
+      window.clearInterval(simulationInterval.current);
+      simulationInterval.current = null;
+    } else if (isPaused && isSimulating) {
+      // Resume by starting a new interval
+      startAutomaticSimulation();
+    }
+  };
+  
+  const changeSimulationSpeed = () => {
+    // Toggle between 1x, 2x, and 3x speeds
+    setSimulationSpeed((prevSpeed) => (prevSpeed % 3) + 1);
+  };
+  
+  // Automatic simulation along the route
+  useEffect(() => {
+    if (isSimulating && !isPaused && currentRoute) {
+      startAutomaticSimulation();
+    }
+    
+    return () => {
+      if (simulationInterval.current) {
+        window.clearInterval(simulationInterval.current);
+        simulationInterval.current = null;
+      }
+    };
+  }, [isSimulating, isPaused, currentRoute, simulationSpeed]);
+  
+  const startAutomaticSimulation = () => {
+    if (!currentRoute || !mapInstance) return;
+    
+    // Clear any existing interval
+    if (simulationInterval.current) {
+      window.clearInterval(simulationInterval.current);
+    }
+    
+    // Decode the path from the route's overview polyline
+    const decodedPath = decode(currentRoute.overview_polyline.points);
+    const totalPoints = decodedPath.length;
+    
+    // Start from current position or beginning of route
+    if (simulationStepRef.current === 0 && currentRoute.legs[0].start_location) {
+      const startLoc = currentRoute.legs[0].start_location;
+      mapInstance.setCenter({ lat: startLoc.lat, lng: startLoc.lng });
+      mapInstance.setZoom(19);
+      mapInstance.setTilt(60);
+      
+      // Also update the origin marker position to the start location
+      const { setMarkers, markers } = useNavigationStore.getState();
+      const updatedMarkers = markers.map(marker => {
+        if (marker.id === 'origin' || marker.label === 'A') {
+          return {
+            ...marker,
+            position: { 
+              lat: startLoc.lat, 
+              lng: startLoc.lng 
+            }
+          };
+        }
+        return marker;
+      });
+      setMarkers(updatedMarkers);
+    }
+    
+    // Set interval to move along the path
+    simulationInterval.current = window.setInterval(() => {
+      if (simulationStepRef.current < totalPoints - 1) {
+        // Move to the next point in the path
+        const nextIndex = Math.min(simulationStepRef.current + 1, totalPoints - 1);
+        const point = decodedPath[nextIndex];
+        
+        if (point) {
+          const newPosition = new google.maps.LatLng(point[0], point[1]);
+          
+          // Calculate heading to next point
+          if (lastPositionRef.current) {
+            const heading = google.maps.geometry.spherical.computeHeading(
+              lastPositionRef.current,
+              newPosition
+            );
+            mapInstance.setHeading(heading);
+            lastHeadingRef.current = heading;
+          }
+          
+          mapInstance.setCenter(newPosition);
+          lastPositionRef.current = newPosition;
+          simulationStepRef.current = nextIndex;
+          
+          // Create a mock position object to simulate GPS movement
+          const mockPosition = {
+            coords: {
+              latitude: point[0],
+              longitude: point[1],
+              accuracy: 5,
+              heading: lastHeadingRef.current || 0,
+              speed: 5 * simulationSpeed,
+              altitude: null,
+              altitudeAccuracy: null
+            },
+            timestamp: Date.now()
+          };
+          
+          // Update user position state as if this was from GPS
+          setUserPosition(mockPosition as GeolocationPosition);
+          
+          // Update the origin marker position to the new position
+          const { setMarkers, markers } = useNavigationStore.getState();
+          const updatedMarkers = markers.map(marker => {
+            if (marker.id === 'origin' || marker.label === 'A') {
+              return {
+                ...marker,
+                position: { 
+                  lat: point[0], 
+                  lng: point[1] 
+                }
+              };
+            }
+            return marker;
+          });
+          setMarkers(updatedMarkers);
+          
+          // Check if we need to update the current step
+          updateNavigationStep(newPosition);
+          
+          // Recalculate ETA and distances
+          recalculateRouteMetrics(newPosition);
+        }
+      } else {
+        // End of route reached
+        window.clearInterval(simulationInterval.current!);
+        simulationInterval.current = null;
+        setIsSimulating(false);
+        
+        // Show arrival message
+        setStatusMessage("You have arrived at your destination");
+        setTimeout(() => {
+          setStatusMessage(null);
+        }, 3000);
+      }
+    }, 500 / simulationSpeed); // Adjust speed based on multiplier
+  };
+  
+  const updateNavigationStep = (currentPosition: google.maps.LatLng) => {
+    if (!currentRoute || !currentRoute.legs || !currentRoute.legs[0]) return;
+    
+    const steps = currentRoute.legs[0].steps;
+    
+    // Find the closest step
+    let minDistance = Infinity;
+    let closestStepIndex = currentStep;
+    
+    for (let i = currentStep; i < steps.length; i++) {
+      const stepEndPos = new google.maps.LatLng(
+        steps[i].end_location.lat,
+        steps[i].end_location.lng
+      );
+      
+      const distance = google.maps.geometry.spherical.computeDistanceBetween(
+        currentPosition,
+        stepEndPos
+      );
+      
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestStepIndex = i;
+      }
+      
+      // If we're very close to the end of a step, move to the next one
+      if (distance < 20 && i === currentStep) { // Within 20 meters
+        if (i < steps.length - 1) {
+          incrementStep();
+          break;
+        }
+      }
+    }
   };
 
   // Check if we should render this component
@@ -322,24 +824,24 @@ export function NavigationMode() {
   const estimatedTimeLeft = currentRoute.legs[0]?.duration.text || '';
   const compactTimeLeft = formatCompactTime(estimatedTimeLeft);
 
-  return (
-    <div className={classes.navigationMode}>
+    return (
+      <div className={classes.navigationMode}>
       {/* Header with back button, ETA, and volume control */}
-      <div className={classes.header}>
+        <div className={classes.header}>
         <button className={classes.headerButton} onClick={handleExitNavigation}>
-          <IconArrowBack size={20} />
-        </button>
+            <IconArrowBack size={20} />
+          </button>
         
         <div className={classes.etaDisplay}>
           ETA: <strong>{compactTimeLeft}</strong>
-        </div>
+          </div>
         
-        <button 
+            <button 
           className={classes.headerButton}
-          onClick={toggleVolume}
-        >
-          {isMuted ? <IconVolumeOff size={20} /> : <IconVolume size={20} />}
-        </button>
+              onClick={toggleVolume}
+            >
+              {isMuted ? <IconVolumeOff size={20} /> : <IconVolume size={20} />}
+            </button>
       </div>
       
       {/* Main map view */}
@@ -352,10 +854,77 @@ export function NavigationMode() {
             {statusMessage}
           </div>
         )}
+        
+        {/* Simulation controls */}
+        {isNavigating && (
+          <div className={classes.simulationControls}>
+            <button 
+              className={`${classes.simulationButton} ${isSimulating ? classes.active : ''}`}
+              onClick={toggleSimulation}
+              title={isSimulating ? "Exit Simulation Mode" : "Enter Simulation Mode"}
+            >
+              SIM {isSimulating ? "ON" : "OFF"}
+            </button>
+            
+            {isSimulating && (
+              <>
+                <button
+                  className={classes.simulationButton}
+                  onClick={moveForward}
+                  title="Move Forward"
+                >
+                  <IconArrowNarrowUp size={20} />
+                </button>
+                <button
+                  className={classes.simulationButton}
+                  onClick={turnLeft}
+                  title="Turn Left"
+                >
+                  <IconArrowNarrowLeft size={20} />
+                </button>
+                <button
+                  className={classes.simulationButton}
+                  onClick={turnRight}
+                  title="Turn Right"
+                >
+                  <IconArrowNarrowRight size={20} />
+                </button>
+                <button
+                  className={classes.simulationButton}
+                  onClick={togglePause}
+                  title={isPaused ? "Resume Simulation" : "Pause Simulation"}
+                >
+                  {isPaused ? <IconPlayerPlay size={20} /> : <IconPlayerPause size={20} />}
+                </button>
+                <button
+                  className={classes.simulationButton}
+                  onClick={changeSimulationSpeed}
+                  title="Change Simulation Speed"
+                >
+                  {simulationSpeed}x
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Footer with next direction and controls */}
-      <div className={classes.footer}>
+      <div 
+        ref={footerRef}
+        className={`${classes.footer} ${showAllDirections ? classes.expanded : ''}`}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        {/* Swipe handle */}
+        <div 
+          className={classes.swipeHandle}
+          onClick={() => setShowAllDirections(!showAllDirections)}
+        >
+          {showAllDirections ? <IconChevronDown size={20} /> : <IconChevronUp size={20} />}
+        </div>
+        
         {/* Next maneuver info */}
         {nextManeuver ? (
           <div className={classes.nextManeuver}>
@@ -366,7 +935,7 @@ export function NavigationMode() {
             
             <div className={classes.nextManeuverText}>
               {getInstructionText(nextManeuver.html_instructions)}
-            </div>
+              </div>
             
             <div className={classes.nextManeuverDistance}>
               {formatDistance(nextManeuver.distance)}
@@ -375,6 +944,25 @@ export function NavigationMode() {
         ) : (
           <div className={classes.arrivingText}>
             Arriving at destination
+          </div>
+        )}
+        
+        {/* All directions (visible when expanded) */}
+        {showAllDirections && (
+          <div className={classes.directionsList}>
+            {currentRoute && currentRoute.legs && currentRoute.legs[0]?.steps.map((step, index) => (
+              <div
+                key={index}
+                className={`${classes.directionStep} ${index === currentStep ? classes.active : ''}`}
+              >
+                <div className={classes.stepNumber}>{index + 1}</div>
+                <div
+                  className={classes.stepInstruction}
+                  dangerouslySetInnerHTML={{ __html: step.html_instructions }}
+                />
+                <div className={classes.stepDistance}>{formatDistance(step.distance)}</div>
+              </div>
+            ))}
           </div>
         )}
         
@@ -395,7 +983,7 @@ export function NavigationMode() {
             <IconMicrophone size={24} />
           </button>
         </div>
-        
+
         {/* Hint text */}
         <div className={classes.hintText}>
           Say "Hey Saarthi" to activate voice assistant

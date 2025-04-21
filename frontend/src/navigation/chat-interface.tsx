@@ -83,7 +83,7 @@ export function ChatInterface() {
 
       // Remove thinking message
       setMessages(prev => prev.filter(msg => msg !== thinkingMessage));
-
+      
       if (response.ok) {
         const data = await response.json();
         
@@ -111,7 +111,7 @@ export function ChatInterface() {
     } catch (error) {
       // Remove thinking message and add error message
       setMessages(prev => prev.filter(msg => msg !== thinkingMessage));
-      
+
       const assistantMessage: Message = {
         sender: 'assistant',
         text: "Sorry, there was an error processing your request",

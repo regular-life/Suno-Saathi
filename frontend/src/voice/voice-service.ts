@@ -65,7 +65,7 @@ class VoiceService {
 
   constructor() {
     if (typeof window !== 'undefined') {
-      this.initSpeechRecognition();
+    this.initSpeechRecognition();
       this.initWakeWordRecognition();
       this.loadPreferredVoice();
     }
@@ -77,14 +77,46 @@ class VoiceService {
   private loadPreferredVoice(): void {
     if (!('speechSynthesis' in window)) return;
     
-    // Load voices and select preferred voice (female voice if available)
+    // Load voices and select preferred voice (in priority order)
     const loadVoices = () => {
       const voices = window.speechSynthesis.getVoices();
-      this.synthesisVoice = voices.find(voice => 
-        voice.name.includes('female') || 
-        voice.name.includes('Samantha') || 
-        voice.name.includes('Google UK English Female')
-      ) || null;
+      
+      // Define preferred voice models in priority order
+      const preferredVoices = [
+        'Hindi+anika',
+        'Hindi+Annie',
+        'Hindi+female1',
+        'en-IN+female',
+        'hi-IN',
+        'en-IN'
+      ];
+      
+      // Try to find voices in order of preference
+      for (const preferredVoice of preferredVoices) {
+        const voice = voices.find(voice => 
+          voice.name.includes(preferredVoice) || 
+          voice.lang.includes(preferredVoice)
+        );
+        
+        if (voice) {
+          this.synthesisVoice = voice;
+          console.log(`Selected voice: ${voice.name} (${voice.lang})`);
+          break;
+        }
+      }
+      
+      // If no preferred voice found, fall back to any female voice
+      if (!this.synthesisVoice) {
+        this.synthesisVoice = voices.find(voice => 
+          voice.name.toLowerCase().includes('female')
+        ) || null;
+        
+        if (this.synthesisVoice) {
+          console.log(`Fallback voice: ${this.synthesisVoice.name} (${this.synthesisVoice.lang})`);
+        } else {
+          console.log('No preferred voice found, using system default');
+        }
+      }
     };
     
     // Chrome loads voices asynchronously
@@ -113,7 +145,7 @@ class VoiceService {
     // Count matching words
     const matchingWords = words2.filter(word => words1.includes(word)).length;
     return matchingWords / Math.max(words1.length, words2.length);
-  }
+    }
 
   /**
    * Initialize speech recognition for command processing
@@ -153,7 +185,7 @@ class VoiceService {
           
           this.stopWakeWordDetection();
           this.playSound(WAKE_SOUND_PATH);
-          
+      
           if (this.onWakeWordCallback) {
             this.onWakeWordCallback();
           }

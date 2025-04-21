@@ -15,13 +15,16 @@ export function ChatInterface() {
   const [input, setInput] = useState('');
   const [opened, { toggle }] = useDisclosure(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   
   const { 
     isNavigating, 
     currentRoute, 
     currentStep,
     distanceRemaining,
-    timeRemaining
+    timeRemaining,
+    origin,
+    destination
   } = useNavigationStore();
 
   const scrollToBottom = () => {
@@ -32,7 +35,7 @@ export function ChatInterface() {
     scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!input.trim()) return;
 
     // Add user message
@@ -44,7 +47,7 @@ export function ChatInterface() {
     setMessages(prev => [...prev, userMessage]);
     setInput('');
 
-    // Simulate thinking
+    // Add thinking message
     const thinkingMessage: Message = {
       sender: 'assistant',
       text: '...',
@@ -52,32 +55,70 @@ export function ChatInterface() {
     };
     setMessages(prev => [...prev, thinkingMessage]);
 
-    // Generate response
-    setTimeout(() => {
+    try {
+      // Get current location and navigation context
+      const contextData = {
+        session_id: sessionId,
+        navigation_status: isNavigating ? 'active' : 'inactive',
+        current_step: currentStep,
+        origin: origin || 'not set',
+        destination: destination || 'not set',
+        distance_remaining: distanceRemaining,
+        time_remaining: timeRemaining,
+        current_time: new Date().toLocaleTimeString(),
+        current_date: new Date().toLocaleDateString()
+      };
+
+      // Send request to LLM API
+      const response = await fetch('/api/llm/query', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: input,
+          context: contextData
+        }),
+      });
+
+      // Remove thinking message
+      setMessages(prev => prev.filter(msg => msg !== thinkingMessage));
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Save session ID for conversation continuity
+        if (data.metadata?.session_id) {
+          setSessionId(data.metadata.session_id);
+        }
+
+        // Add assistant response
+        const assistantMessage: Message = {
+          sender: 'assistant',
+          text: data.response || "Sorry, I couldn't process your request",
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+      } else {
+        // Handle error
+        const assistantMessage: Message = {
+          sender: 'assistant',
+          text: "Sorry, I'm having trouble connecting to the server",
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+      }
+    } catch (error) {
+      // Remove thinking message and add error message
       setMessages(prev => prev.filter(msg => msg !== thinkingMessage));
       
-      let response = "I'm here to help with your navigation!";
-      
-      if (input.toLowerCase().includes('how far')) {
-        response = `You're about ${distanceRemaining} away from your destination.`;
-      } else if (input.toLowerCase().includes('how long')) {
-        response = `You'll arrive in approximately ${timeRemaining}.`;
-      } else if (input.toLowerCase().includes('next')) {
-        const nextStep = currentRoute?.legs[0]?.steps[currentStep + 1];
-        if (nextStep) {
-          response = `Next: ${nextStep.maneuver.instruction} in ${nextStep.distance} meters`;
-        } else {
-          response = "You're at the end of your route!";
-        }
-      }
-
       const assistantMessage: Message = {
         sender: 'assistant',
-        text: response,
+        text: "Sorry, there was an error processing your request",
         timestamp: new Date()
       };
       setMessages(prev => [...prev, assistantMessage]);
-    }, 1000);
+    }
   };
 
   if (!isNavigating) return null;

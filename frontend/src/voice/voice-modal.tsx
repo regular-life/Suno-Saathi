@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Modal, Text, Button } from '@mantine/core';
-import { IconMicrophone, IconPlayerStop, IconSend } from '@tabler/icons-react';
+import { IconMicrophone, IconPlayerStop } from '@tabler/icons-react';
+import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 import classes from './voice-modal.module.scss';
 import { voiceService } from './voice-service';
 import { useNavigationStore } from '@/navigation/navigation-store';
-import { useNavigationPlaces } from '@/navigation/navigation.query';
 
 interface VoiceModalProps {
   opened: boolean;
@@ -12,179 +12,143 @@ interface VoiceModalProps {
 }
 
 export function VoiceModal({ opened, onClose }: VoiceModalProps) {
-  const [isListening, setIsListening] = useState(false);
-  const [transcript, setTranscript] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [message, setMessage] = useState('Tap the microphone to start speaking');
-  
-  const { 
-    setOrigin,
-    setDestination,
-    getDirections,
-    startNavigation
+  const {
+    origin,
+    destination,
+    isNavigating,
   } = useNavigationStore();
 
-  // Start/stop listening when modal opens/closes
+  // ---- speech‑to‑text ---------------------------------------------------
+  const {
+    transcript,
+    listening,
+    resetTranscript,
+    browserSupportsSpeechRecognition,
+  } = useSpeechRecognition();
+
+  // ---- UI / assistant state --------------------------------------------
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [message, setMessage] = useState('Tap the microphone to start speaking');
+  const [llmResponse, setLlmResponse] = useState('');
+  const [sessionId, setSessionId] = useState<string | undefined>(undefined);
+
+  // Reset modal each time it opens ---------------------------------------
   useEffect(() => {
     if (opened) {
-      setTranscript('');
+      resetTranscript();
       setMessage('Tap the microphone to start speaking');
+      setLlmResponse('');
     } else {
-      if (isListening) {
-        stopListening();
-      }
+      SpeechRecognition.abortListening();
     }
   }, [opened]);
 
-  // Start listening
-  const startListening = () => {
-    setIsListening(true);
-    setMessage('Listening...');
-    
-    const success = voiceService.startListening(
-      (text) => {
-        setTranscript(text);
-        setIsListening(false);
-        setMessage('Processing your request...');
-        processVoiceCommand(text);
-      },
-      () => {
-        setIsListening(false);
-        if (!transcript) {
-          setMessage('Tap the microphone to start speaking');
-        }
-      }
-    );
-    
-    if (!success) {
-      setIsListening(false);
-      setMessage('Could not access microphone. Please check permissions.');
+  // When recording stops & we have text → ship to LLM --------------------
+  useEffect(() => {
+    if (!listening && transcript && !isProcessing) {
+      processWithLLM(transcript);
     }
+  }, [listening, transcript]);
+
+  // ---------------- microphone controls ---------------------------------
+  const startListening = () => {
+    if (!browserSupportsSpeechRecognition) {
+      setMessage('Speech recognition not supported in this browser.');
+      return;
+    }
+
+    setMessage('Listening...');
+    resetTranscript();
+    SpeechRecognition.startListening({ continuous: false, language: 'en-US' });
   };
 
-  // Stop listening
   const stopListening = () => {
-    voiceService.stopListening();
-    setIsListening(false);
-    
+    SpeechRecognition.stopListening();
     if (!transcript) {
       setMessage('Tap the microphone to start speaking');
     }
   };
 
-  // Process voice command
-  const processVoiceCommand = async (text: string) => {
+  // ---------------- LLM plumbing ---------------------------------------
+  const buildContext = async () => {
+    const loc = await new Promise<string | null>((resolve) => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (p) => resolve(`${p.coords.latitude},${p.coords.longitude}`),
+          () => resolve(null)
+        );
+      } else resolve(null);
+    });
+
+    return {
+      session_id: sessionId,
+      origin: origin || 'not set',
+      destination: destination || 'not set',
+      is_navigating: isNavigating,
+      current_location: loc,
+      current_time: new Date().toLocaleTimeString(),
+      current_date: new Date().toLocaleDateString(),
+    };
+  };
+
+  const processWithLLM = async (text: string) => {
     setIsProcessing(true);
-    
+    setMessage('Processing with AI assistant...');
+
     try {
-      // Extract navigation intent
-      if (text.toLowerCase().includes('navigate to') || text.toLowerCase().includes('directions to')) {
-        const destination = text.replace(/navigate to|directions to/i, '').trim();
-        
-        if (destination) {
-          // Set destination and get current location for origin
-          setDestination(destination);
-          
-          // Try to get user's current location for origin
-          if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-              async (position) => {
-                const { latitude, longitude } = position.coords;
-                setOrigin(`${latitude},${longitude}`);
-                
-                // Get directions
-                const route = await getDirections();
-                if (route !== null) {
-                  setMessage(`Got directions to ${destination}. Ready to start navigation.`);
-                  voiceService.speak(`Got directions to ${destination}. Ready to start navigation.`);
-                  startNavigation(route);
-                } else {
-                  setMessage(`Could not find a route to ${destination}`);
-                  voiceService.speak(`Could not find a route to ${destination}`);
-                }
-              },
-              (error) => {
-                console.error('Geolocation error:', error);
-                setMessage('Could not get your current location. Please enter an origin manually.');
-                voiceService.speak('Could not get your current location. Please enter an origin manually.');
-              }
-            );
-          }
-        } else {
-          setMessage('Please specify a destination');
-          voiceService.speak('Please specify a destination');
-        }
-      } 
-      // Search for a place
-      else if (text.toLowerCase().includes('find') || text.toLowerCase().includes('search for')) {
-        const placeQuery = text.replace(/find|search for/i, '').trim();
-        
-        if (placeQuery) {
-          const results = await useNavigationPlaces.apiCall({
-            query: placeQuery,
-            location: null
-          });
-          if (results.data && results.data.places && results.data.places.length > 0) {
-            const place = results.data.places[0];
-            setMessage(`Found ${place.name}`);
-            voiceService.speak(`Found ${place.name}`);
-            
-            // Close modal after speaking
-            setTimeout(() => {
-              onClose();
-            }, 3000);
-          } else {
-            setMessage(`Could not find ${placeQuery}`);
-            voiceService.speak(`Could not find ${placeQuery}`);
-          }
-        } else {
-          setMessage('Please specify what to search for');
-          voiceService.speak('Please specify what to search for');
-        }
-      }
-      // Generic response for other commands
-      else {
-        setMessage('I heard you say: ' + text);
-        voiceService.speak('I heard you say: ' + text);
-      }
-    } catch (error) {
-      console.error('Error processing voice command:', error);
-      setMessage('Sorry, there was an error processing your request');
-      voiceService.speak('Sorry, there was an error processing your request');
+      const context = await buildContext();
+      const res = await fetch('/api/llm/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: text, context }),
+      });
+
+      if (!res.ok) throw new Error('LLM request failed');
+
+      const data = await res.json();
+      const responseText = data.response || 'Sorry, I could not process that.';
+      if (data.metadata?.session_id) setSessionId(data.metadata.session_id);
+
+      setLlmResponse(responseText);
+      setMessage('AI assistant responded');
+      voiceService.speak(responseText);
+    } catch (err) {
+      console.error(err);
+      setMessage('Error talking to AI assistant');
+      voiceService.speak('Sorry, there was an error talking to the AI assistant.');
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // Manually submit the transcript
-  const handleSubmit = () => {
-    if (transcript) {
-      setMessage('Processing your request...');
-      processVoiceCommand(transcript);
-    }
-  };
-
+  // ----------------------- UI -------------------------------------------
   return (
-    <Modal 
-      opened={opened} 
-      onClose={onClose} 
-      title="Voice Assistant" 
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      title="Voice Assistant"
       centered
       classNames={{ content: classes.modalContent }}
     >
       <div className={classes.modalBody}>
         <Text className={classes.message}>{message}</Text>
-        
+
         {transcript && (
           <div className={classes.transcriptContainer}>
             <Text className={classes.transcript}>{transcript}</Text>
           </div>
         )}
-        
+
+        {llmResponse && (
+          <div className={classes.llmResponseContainer}>
+            <Text className={classes.llmResponse}>{llmResponse}</Text>
+          </div>
+        )}
+
         <div className={classes.controls}>
-          {isListening ? (
-            <Button 
-              className={classes.stopButton} 
+          {listening ? (
+            <Button
+              className={classes.stopButton}
               onClick={stopListening}
               size="lg"
               variant="filled"
@@ -193,8 +157,8 @@ export function VoiceModal({ opened, onClose }: VoiceModalProps) {
               <IconPlayerStop size={24} />
             </Button>
           ) : (
-            <Button 
-              className={classes.micButton} 
+            <Button
+              className={classes.micButton}
               onClick={startListening}
               size="lg"
               variant="filled"
@@ -204,21 +168,8 @@ export function VoiceModal({ opened, onClose }: VoiceModalProps) {
               <IconMicrophone size={24} />
             </Button>
           )}
-          
-          {transcript && !isListening && (
-            <Button 
-              className={classes.sendButton} 
-              onClick={handleSubmit}
-              size="lg"
-              variant="filled"
-              color="green"
-              disabled={isProcessing}
-            >
-              <IconSend size={24} />
-            </Button>
-          )}
         </div>
       </div>
     </Modal>
   );
-} 
+}

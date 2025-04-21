@@ -60,7 +60,7 @@
 .controlButton {
   width: 40px;
   height: 40px;
-  border-radius: 4px;
+  border-radius: 50%;
   background-color: white;
   border: none;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
@@ -74,5 +74,25 @@
 
   &:hover {
     transform: scale(1.05);
+  }
+}
+
+/* Mobile-specific styles */
+@media (max-width: 768px) {
+  .searchBar {
+    top: 10px;
+    width: 95%;
+    max-width: none;
+  }
+
+  .controls {
+    bottom: 80px; /* Adjust for mobile navigation bars */
+    left: 10px;
+    gap: 8px;
+  }
+
+  .controlButton {
+    width: 48px; /* Larger touch targets for mobile */
+    height: 48px;
   }
 } 

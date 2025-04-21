@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { IconCar, IconWalk, IconBike, IconPlayerPlay, IconX, IconCurrentLocation, IconSearch } from '@tabler/icons-react';
+import { IconCar, IconWalk, IconBike, IconPlayerPlay, IconX, IconCurrentLocation, IconSearch, IconArrowLeft } from '@tabler/icons-react';
 import classes from './navigation-panel.module.scss';
 import { useNavigationStore, Marker } from './navigation-store';
 import { useNavigationPlaces } from './navigation.query';
@@ -111,7 +111,7 @@ function SearchInput({
   );
 }
 
-export function NavigationPanel() {
+export function NavigationPanel({ onClose }: { onClose: () => void }) {
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
   const [originCoords, setOriginCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -131,8 +131,14 @@ export function NavigationPanel() {
     isNavigating,
     currentStep,
     mapInstance,
-    setMarkers
+    setMarkers,
+    toggleSidebar
   } = useNavigationStore();
+
+  // Use the provided onClose function directly instead of toggleSidebar
+  const closeNavbar = () => {
+    onClose();
+  };
 
   // Sync local state with store
   useEffect(() => {
@@ -217,9 +223,20 @@ export function NavigationPanel() {
         mapInstance.setCenter(location);
         mapInstance.setZoom(15);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error getting current location:', error);
-      setError('Could not get your current location');
+      if (error.code) {
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            setError('Location permission denied');
+            break;
+          case error.TIMEOUT:
+            setError('Location request timed out');
+            break;
+          default:
+            setError('Location service error');
+        }
+      } else setError('Could not get your current location');
     }
   };
 
@@ -301,12 +318,29 @@ export function NavigationPanel() {
     }
 
     startNavigation(currentRoute);
+    
+    // After starting navigation, direct the app to focus mode
+    // Give time for the navigation mode to render
+    setTimeout(() => {
+      // Look for the focus mode button by class name from module.scss
+      const focusModeBtn = document.querySelector('[class*="focusModeButton"]') as HTMLButtonElement;
+      if (focusModeBtn) {
+        focusModeBtn.click();
+      }
+    }, 300);
   };
 
   return (
     <div className={classes.panel}>
       <div className={classes.header}>
-        <h3>Directions</h3>
+        <h1>Directions</h1>
+        <button 
+          className={classes.closeButton} 
+          onClick={closeNavbar}
+          aria-label="Close directions"
+        >
+          <IconArrowLeft size={20} />
+        </button>
       </div>
 
       <div className={classes.form}>

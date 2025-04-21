@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel
 
@@ -175,3 +175,14 @@ class WakeWordResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     detail: str
+
+
+# LLM schemas
+class LLMQueryRequest(BaseModel):
+    query: str
+    context: Optional[str] = None
+    
+class LLMQueryResponse(BaseModel):
+    response: str
+    status: str = "success"
+    metadata: Optional[Dict[str, Any]] = None

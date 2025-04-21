@@ -7,11 +7,29 @@ import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 import type { AppProps } from "next/app";
 import Head from "next/head";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+const queryClient = new QueryClient();
 
 function App({ Component, pageProps }: AppProps) {
     const [queryClient] = useState(() => new QueryClient());
+
+    useEffect(() => {
+        // Register service worker
+        if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').then(
+                    (registration) => {
+                        console.log('Service Worker registration successful');
+                    },
+                    (err) => {
+                        console.error('Service Worker registration failed', err);
+                    }
+                );
+            });
+        }
+    }, []);
 
     return (
         <MantineProvider>
@@ -24,6 +42,7 @@ function App({ Component, pageProps }: AppProps) {
                     rel="stylesheet"
                 />
                 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
                 <title>Saarthi</title>
             </Head>
             <QueryClientProvider client={queryClient}>

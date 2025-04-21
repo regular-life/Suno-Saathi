@@ -63,6 +63,15 @@ export interface NavigationState {
   // Distance and Time Remaining
   distanceRemaining: string;
   timeRemaining: string;
+  
+  // UI State
+  isSidebarOpen: boolean;
+  toggleSidebar: () => void;
+  setIsSidebarOpen: (isOpen: boolean) => void;
+  
+  // Navigation UI State
+  showDirectionsPanel: boolean;
+  toggleDirectionsPanel: () => void;
 }
 
 // Create the store
@@ -114,6 +123,15 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
       timeRemaining: step.duration.text
     };
   }),
+  
+  // UI State
+  isSidebarOpen: false,
+  toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
+  setIsSidebarOpen: (isOpen) => set({ isSidebarOpen: isOpen }),
+  
+  // Navigation UI State
+  showDirectionsPanel: true,
+  toggleDirectionsPanel: () => set((state) => ({ showDirectionsPanel: !state.showDirectionsPanel })),
   
   // Directions
   getDirections: async (params?: { origin: string; destination: string }) => {
@@ -187,7 +205,8 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
     currentRoute: route,
     currentStep: 0,
     distanceRemaining: route.legs[0].distance.text,
-    timeRemaining: route.legs[0].duration.text
+    timeRemaining: route.legs[0].duration.text,
+    showDirectionsPanel: true   // Show the directions panel when navigation starts
   }),
   
   endNavigation: () => set({ 
@@ -195,7 +214,8 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
     currentRoute: null,
     currentStep: 0,
     distanceRemaining: '0 km',
-    timeRemaining: '0 min'
+    timeRemaining: '0 min',
+    showDirectionsPanel: false  // Hide the directions panel when navigation ends
   }),
   
   // Distance and Time Remaining

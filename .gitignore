@@ -2,5 +2,4 @@
 trial/
 */__pycache__/
 .env
-trail.py
 .pytest_cache/

@@ -5,17 +5,61 @@ import { IconSearch } from '@tabler/icons-react';
 import { DEFAULT_CENTER, DEFAULT_ZOOM } from '@/utils/constants';
 import { useNavigationStore } from '@/navigation/navigation-store';
 import { useNavigationPlaces } from '@/navigation/navigation.query';
+import { decode } from '@googlemaps/polyline-codec';
 
-// Map component that handles the actual map instance
+// Map component that handles the actual map instance and route display
 function MapComponent() {
   const map = useMap();
-  const { setMapInstance, markers } = useNavigationStore();
+  const { setMapInstance, markers, currentRoute, isNavigating } = useNavigationStore();
+  const polylineRef = useRef<google.maps.Polyline | null>(null);
 
   useEffect(() => {
     if (map) {
       setMapInstance(map);
     }
   }, [map, setMapInstance]);
+
+  // Create and update the route polyline
+  useEffect(() => {
+    // Create path coordinates from polyline if available
+    const pathCoordinates = currentRoute && isNavigating && currentRoute.overview_polyline
+      ? decode(currentRoute.overview_polyline.points).map(([lat, lng]) => ({ lat, lng }))
+      : [];
+
+    // Remove previous polyline if exists
+    if (polylineRef.current) {
+      polylineRef.current.setMap(null);
+      polylineRef.current = null;
+    }
+
+    // Add new polyline if we have coordinates and map is available
+    if (map && pathCoordinates.length > 0 && isNavigating) {
+      polylineRef.current = new google.maps.Polyline({
+        path: pathCoordinates,
+        geodesic: true,
+        strokeColor: '#4285F4',
+        strokeOpacity: 0.8,
+        strokeWeight: 5,
+        map: map
+      });
+
+      // Fit the map to the route bounds
+      if (currentRoute?.bounds) {
+        const bounds = new google.maps.LatLngBounds(
+          currentRoute.bounds.southwest,
+          currentRoute.bounds.northeast
+        );
+        map.fitBounds(bounds);
+      }
+    }
+
+    // Cleanup function
+    return () => {
+      if (polylineRef.current) {
+        polylineRef.current.setMap(null);
+      }
+    };
+  }, [map, currentRoute, isNavigating]);
 
   return (
     <>
@@ -50,7 +94,7 @@ function MapComponent() {
 }
 
 // Main map container component
-export function MapContainer() {
+export function MapContainer({ hideSearch = false }: { hideSearch?: boolean }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [showResults, setShowResults] = useState(false);
@@ -119,43 +163,45 @@ export function MapContainer() {
 
   return (
     <div className={classes.map}>
-      <div className={classes.searchBar}>
-        <input
-          type="text"
-          className={classes.searchInput}
-          placeholder="Search for a location"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          onKeyPress={handleKeyPress}
-          onFocus={() => searchResults.length > 0 && setShowResults(true)}
-        />
-        <button className={classes.searchButton} onClick={handleSearch}>
-          <IconSearch size={20} />
-        </button>
-        
-        {showResults && searchResults.length > 0 && (
-          <div className={classes.searchResults}>
-            {searchResults.map((place) => (
-              <div 
-                key={place.place_id} 
-                className={classes.searchResultItem}
-                onClick={() => handleSelectPlace(place)}
-              >
-                <div className={classes.placeName}>{place.name}</div>
-                <div className={classes.placeAddress}>
-                  {place.address || place.vicinity || "Unknown Address"}
+      {!hideSearch && (
+        <div className={classes.searchBar}>
+          <input
+            type="text"
+            className={classes.searchInput}
+            placeholder="Search for a location"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyPress={handleKeyPress}
+            onFocus={() => searchResults.length > 0 && setShowResults(true)}
+          />
+          <button className={classes.searchButton} onClick={handleSearch}>
+            <IconSearch size={20} />
+          </button>
+          
+          {showResults && searchResults.length > 0 && (
+            <div className={classes.searchResults}>
+              {searchResults.map((place) => (
+                <div 
+                  key={place.place_id} 
+                  className={classes.searchResultItem}
+                  onClick={() => handleSelectPlace(place)}
+                >
+                  <div className={classes.placeName}>{place.name}</div>
+                  <div className={classes.placeAddress}>
+                    {place.address || place.vicinity || "Unknown Address"}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-        
-        {isLoading && (
-          <div className={classes.searchLoading}>
-            Loading results...
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          )}
+          
+          {isLoading && (
+            <div className={classes.searchLoading}>
+              Loading results...
+            </div>
+          )}
+        </div>
+      )}
 
       <APIProvider apiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}>
         <Map

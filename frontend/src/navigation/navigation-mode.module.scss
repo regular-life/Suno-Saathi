@@ -5,27 +5,243 @@
   width: 100%;
   height: 100%;
   background: white;
+  color: #333;
   z-index: 1000;
   display: flex;
   flex-direction: column;
-  max-height: 100vh;
   overflow: hidden;
+}
+
+.mapFullscreen {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  z-index: 1;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  background: white;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
+
+.headerButton {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.1);
+  color: black;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  
+  &:hover {
+    background: rgba(0, 0, 0, 0.2);
+  }
+}
+
+.etaDisplay {
+  font-size: 16px;
+  color: black;
+  text-align: center;
+  
+  strong {
+    font-size: 18px;
+  }
+}
+
+.footer {
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.95);
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
+
+.nextManeuver {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 15px;
+}
+
+.nextManeuverIcon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nextLabel {
+  font-size: 14px;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.nextManeuverText {
+  flex: 1;
+  font-size: 14px;
+  color: black;
+  padding: 0 10px;
+}
+
+.nextManeuverDistance {
+  font-size: 14px;
+  font-weight: bold;
+  color: black;
+}
+
+.arrivingText {
+  text-align: center;
+  margin-bottom: 15px;
+  color: rgba(0, 0, 0, 0.6);
+  font-size: 14px;
+}
+
+.controls {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.focusModeButton, 
+.micButton {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.1);
+  color: black;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  
+  &:hover {
+    background: rgba(0, 0, 0, 0.2);
+    transform: scale(1.05);
+  }
+}
+
+.micButton.active {
+  background: rgba(255, 80, 80, 0.5);
+  border: 2px solid rgba(255, 80, 80, 0.8);
+  animation: pulse 1.5s infinite;
+}
+
+.hintText {
+  width: 100%;
+  padding: 5px 0 0;
+  font-size: 12px;
+  text-align: center;
+  color: rgba(0, 0, 0, 0.5);
+}
+
+.statusMessage {
+  position: absolute;
+  left: 50%;
+  bottom: 90px;
+  transform: translateX(-50%);
+  padding: 10px 20px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 20px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  font-size: 14px;
+  color: black;
+  text-align: center;
+  z-index: 100;
+}
+
+/* Rotation classes for direction icons */
+.rotateUp {
+  transform: rotate(-90deg);
+}
+
+.rotateRight {
+  transform: rotate(0);
+}
+
+.rotateLeft {
+  transform: rotate(180deg);
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(244, 67, 54, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(244, 67, 54, 0);
+  }
+}
+
+@keyframes pulsate {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.simpleHeader {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  padding: 10px;
+  z-index: 10;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0) 100%);
+}
+
+.exitButton {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: white;
+  color: black;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  
+  &:hover {
+    background: #f0f0f0;
+  }
+}
+
+.floatingControls {
+  position: absolute;
+  bottom: 30px;
+  right: 30px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 
   .mapContainer {
     flex: 1;
     position: relative;
     width: 100%;
     height: 100%;
-  }
-
-  .controls {
-    position: absolute;
-    bottom: 20px;
-    left: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    z-index: 10;
   }
 
   .chatBox {
@@ -41,6 +257,42 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  transform: translateY(110%);
+  transition: transform 0.3s ease-in-out;
+  
+  &.visible {
+    transform: translateY(0);
+  }
+  
+  @media (max-width: 768px) {
+    width: 100%;
+    right: 0;
+    height: 60vh;
+    max-height: 450px;
+  }
+}
+
+.chatToggleButton {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: white;
+  border: none;
+  border-radius: 20px;
+  padding: 8px 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  z-index: 199;
+  
+  @media (max-width: 768px) {
+    right: 50%;
+    transform: translateX(50%);
+  }
   }
 
   .chatHeader {
@@ -120,16 +372,13 @@
       &:disabled {
         background: #e8eaed;
         cursor: not-allowed;
-      }
     }
   }
 }
 
-.header {
+.compactControls {
   display: flex;
-  align-items: center;
-  padding: 16px;
-  border-bottom: 1px solid #eee;
+  gap: 8px;
 }
 
 .title {
@@ -140,12 +389,17 @@
     margin: 0;
     font-size: 16px;
     font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
-}
-
-.controls {
-  display: flex;
-  gap: 8px;
+  
+  @media (max-width: 576px) {
+    h3 {
+      font-size: 14px;
+    }
+  }
 }
 
 .controlButton {
@@ -171,7 +425,7 @@
 }
 
 .currentManeuver {
-  padding: 24px;
+  padding: 16px;
   display: flex;
   align-items: center;
   gap: 16px;
@@ -187,6 +441,7 @@
   border-radius: 50%;
   color: white;
   font-size: 24px;
+  min-width: 48px;
   
   i {
     line-height: 1;
@@ -195,12 +450,18 @@
 
 .maneuverDetails {
   flex: 1;
+  min-width: 0;
 }
 
 .instruction {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 500;
   margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .distance {
@@ -209,15 +470,9 @@
 }
 
 .nextManeuver {
-  padding: 16px 24px;
+  padding: 12px 16px;
   background: #f5f5f5;
   border-top: 1px solid #eee;
-}
-
-.nextLabel {
-  font-size: 12px;
-  color: #666;
-  margin-bottom: 8px;
 }
 
 .nextInstruction {
@@ -232,11 +487,17 @@
   background-size: contain;
   background-repeat: no-repeat;
   background-position: center;
+  min-width: 24px;
 }
 
 .nextText {
   font-size: 14px;
   color: #666;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .bottomControls {
@@ -244,44 +505,6 @@
   display: flex;
   justify-content: center;
   border-top: 1px solid #eee;
-}
-
-.micButton {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: #1a73e8;
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.3s;
-  
-  &:hover {
-    background: #1967d2;
-    transform: scale(1.05);
-  }
-  
-  &.active {
-    background: #d93025;
-    animation: pulse 1.5s infinite;
-  }
-}
-
-@keyframes pulse {
-  0% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(217, 48, 37, 0.7);
-  }
-  70% {
-    transform: scale(1.1);
-    box-shadow: 0 0 0 10px rgba(217, 48, 37, 0);
-  }
-  100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(217, 48, 37, 0);
-  }
 }
 
 // Compact mode styles
@@ -292,7 +515,7 @@
   .compactHeader {
     display: flex;
     align-items: center;
-    padding: 12px 16px;
+    padding: 8px 16px;
     border-bottom: 1px solid #eee;
   }
   
@@ -307,7 +530,7 @@
   }
   
   .compactManeuver {
-    padding: 12px;
+    padding: 8px;
     display: flex;
     justify-content: center;
   }
@@ -315,6 +538,12 @@
   .maneuverIcon {
     width: 32px;
     height: 32px;
+  }
+
+  .compactControls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
   }
 }
 
@@ -337,4 +566,106 @@
 
 .arrive {
   background-image: url('/icons/arrive.svg');
+}
+
+// Add these new styles for the directions panel
+.directionsPanel {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: white;
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+  max-height: 60vh;
+  transition: max-height 0.3s ease;
+  overflow: hidden;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  
+  &.collapsed {
+    max-height: 56px;
+  }
+}
+
+.directionsPanelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid #eee;
+  min-height: 56px;
+}
+
+.directionsSummary {
+  font-size: 16px;
+  font-weight: 500;
+  color: #202124;
+}
+
+.directionsPanelControls {
+  display: flex;
+  gap: 8px;
+}
+
+.collapseButton, 
+.closeButton {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #f5f5f5;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  
+  &:hover {
+    background: #e0e0e0;
+  }
+}
+
+.directionsList {
+  overflow-y: auto;
+  max-height: calc(60vh - 56px);
+  padding: 0;
+}
+
+.directionStep {
+  display: flex;
+  padding: 12px 16px;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+  
+  &:hover {
+    background: #f5f5f5;
+  }
+  
+  &.active {
+    background: #e8f0fe;
+  }
+}
+
+.directionIcon {
+  margin-right: 16px;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #4285F4;
+}
+
+.directionContent {
+  flex: 1;
+}
+
+.directionText {
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.directionDistance {
+  font-size: 12px;
+  color: #5f6368;
 } 

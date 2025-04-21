@@ -5,7 +5,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request
 
 from core.config import CONFIG
-from modules.llm_interface import generate_reply, session_manager, DEFAULT_CONTEXT
+from modules.llm_interface import generate_reply, session_manager
 from modules.navigation import NavigationHandler
 
 from .schemas import (
@@ -106,19 +106,19 @@ async def process_navigation_query(request: NavigationQueryRequest):
                     processed_query=request.query,
                 )
         else:
-            # Create new session with navigation-specific prompt
-            prompt = f"{context_text}User's navigation query: {request.query}\n\nInterpret this navigation-related query and provide a helpful response:"
+                # Create new session with navigation-specific prompt
+                prompt = f"{context_text}User's navigation query: {request.query}\n\nInterpret this navigation-related query and provide a helpful response:"
 
             # Generate response using LLM without session (legacy mode)
             response = generate_reply(prompt)
 
-        # Extract response text
-        if response and response.get("status") == "success":
-            return NavigationQueryResponse(
-                query_type="llm_processed",
-                response=response.get("response"),
-                processed_query=request.query,
-            )
+            # Extract response text
+            if response and response.get("status") == "success":
+                return NavigationQueryResponse(
+                    query_type="llm_processed",
+                    response=response.get("response"),
+                    processed_query=request.query,
+                )
 
         # Fallback to rule-based interpretation if LLM response is not successful
         query_lower = request.query.lower()
@@ -148,8 +148,81 @@ async def process_navigation_query(request: NavigationQueryRequest):
             # Fallback traffic response
             response_data.response = (
                 "Let me check the traffic conditions for you. Please make sure your location is enabled."
-                )
+            )
             return response_data
+
+        # Handle route feature queries
+        elif any(keyword in query_lower for keyword in ["flyover", "underpass", "bridge", "tunnel"]):
+            feature = next(
+                (keyword for keyword in ["flyover", "underpass", "bridge", "tunnel"] if keyword in query_lower),
+                "feature",
+            )
+            response_data.query_type = "route_feature"
+            response_data.feature = feature
+            response_data.response = f"There's a {feature} ahead on your route. I'll guide you when we get closer."
+            return response_data
+
+        # Handle alternative route queries
+        elif any(
+            keyword in query_lower
+            for keyword in [
+                "shortcut",
+                "faster",
+                "quicker",
+                "alternative",
+                "another way",
+            ]
+        ):
+            response_data.query_type = "alternative_route"
+            response_data.response = "I'll check for alternatives on your route. Let me analyze the traffic conditions."
+            return response_data
+
+        # Handle nearby place queries
+        elif any(keyword in query_lower for keyword in ["nearby", "close", "around", "find", "search"]):
+            place_types = [
+                "restaurant",
+                "gas",
+                "petrol",
+                "fuel",
+                "hotel",
+                "hospital",
+                "pharmacy",
+                "atm",
+                "bank",
+                "cafe",
+                "coffee",
+            ]
+            found_type = next(
+                (place_type for place_type in place_types if place_type in query_lower),
+                None,
+            )
+
+            if found_type:
+                response_data.query_type = "nearby_place"
+                response_data.place_type = found_type
+
+                # Try to find places if location is provided
+                if request.location:
+                    try:
+                        location_str = f"{request.location.get('latitude')},{request.location.get('longitude')}"
+                        search_term = found_type
+                        if found_type in ["gas", "petrol", "fuel"]:
+                            search_term = "gas station"
+
+                        places = navigation.find_places(search_term, location_str)
+                        response_data.places = places
+
+                        if places.get("status") == "OK" and places.get("places"):
+                            place_count = min(3, len(places.get("places", [])))
+                            response_data.response = f"I found {place_count} {search_term}s nearby. The closest one is {places['places'][0]['name']}."
+                            return response_data
+                    except Exception as e:
+                        print(f"Error finding places: {e}")
+
+                response_data.response = (
+                    f"I'll help you find {found_type}s nearby. Please make sure your location is enabled."
+                )
+                return response_data
 
         # Default response
         response_data.response = (
@@ -249,19 +322,13 @@ async def process_llm_query(request: LLMQueryRequest):
             if not session_manager.get_session(session_id):
                 session_id = session_manager.create_session(session_id, custom_prompt)
             
-        # Get response - the SessionManager will already clean the response
+        # Get response
         response = session_manager.get_response(session_id, request.query)
         
-        # Extract response text and double-check that it's clean
+        # Extract response text
         if response and response.get("status") == "success":
-            clean_response = response.get("response", "")
-            
-            # Apply a secondary cleaning if needed to ensure no debugging text remains
-            from modules.llm_interface import clean_llm_response
-            clean_response = clean_llm_response(clean_response)
-            
             return LLMQueryResponse(
-                response=clean_response,
+                response=response.get("response"),
                 status="success",
                 metadata={"session_id": response.get("session_id")}
             )

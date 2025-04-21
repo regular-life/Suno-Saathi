@@ -85,82 +85,145 @@
 }
 
 .modalContent {
-  position: relative;
-  padding: 0;
+  min-width: 320px;
+  max-width: 500px;
+  border-radius: 10px;
 }
 
 .modalBody {
   display: flex;
   flex-direction: column;
-  padding: 24px;
   align-items: center;
-  text-align: center;
+  padding: 20px;
 }
 
 .message {
   font-size: 16px;
   margin-bottom: 20px;
-  color: #555;
+  text-align: center;
+  color: #333;
 }
 
 .transcriptContainer {
-  background-color: #f5f5f5;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 24px;
   width: 100%;
-  max-height: 120px;
+  background-color: #f5f5f5;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  max-height: 150px;
   overflow-y: auto;
 }
 
 .transcript {
-  font-size: 18px;
+  font-size: 16px;
   color: #333;
-  word-break: break-word;
+  line-height: 1.5;
+}
+
+.llmResponseContainer {
+  width: 100%;
+  background-color: #e7f5ff;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  max-height: 200px;
+  overflow-y: auto;
+  border-left: 4px solid #4dabf7;
+}
+
+.llmResponse {
+  font-size: 16px;
+  color: #333;
+  line-height: 1.5;
 }
 
 .controls {
   display: flex;
-  justify-content: center;
-  gap: 16px;
-  margin-top: 16px;
+  gap: 15px;
+  margin-top: 10px;
 }
 
-.micButton, 
-.stopButton,
-.sendButton {
-  width: 64px;
-  height: 64px;
+.micButton, .stopButton, .sendButton {
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
   
-  &:hover:not(:disabled) {
+  &:hover {
     transform: scale(1.05);
   }
 }
 
 .micButton {
-  background-color: #1a73e8;
-  
-  &:hover:not(:disabled) {
-    background-color: #1967d2;
-  }
+  background-color: #4285F4;
 }
 
 .stopButton {
-  background-color: #d93025;
-  
-  &:hover:not(:disabled) {
-    background-color: #c5221f;
-  }
+  background-color: #EA4335;
 }
 
 .sendButton {
-  background-color: #34a853;
+  background-color: #34A853;
+}
+
+.llmToggle {
+  width: 100%;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+}
+
+.resetButton {
+  font-size: 12px;
+  color: #666;
+  margin-left: 10px;
   
-  &:hover:not(:disabled) {
-    background-color: #1e8e3e;
+  &:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+    color: #333;
+  }
+}
+
+/* Loading animation */
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.micButton[data-loading="true"] {
+  animation: pulse 1.5s infinite;
+}
+
+/* Responsive styles */
+@media (max-width: 500px) {
+  .modalContent {
+    min-width: 100%;
+  }
+  
+  .controls {
+    gap: 10px;
+  }
+  
+  .micButton, .stopButton, .sendButton {
+    width: 50px;
+    height: 50px;
   }
 } 

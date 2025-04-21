@@ -1,28 +1,130 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
-  IconVolume, 
-  IconVolumeOff, 
-  IconArrowsMinimize, 
   IconArrowBack, 
   IconMicrophone,
-  IconX,
-  IconSend
+  IconFocus,
+  IconVolume,
+  IconVolumeOff
 } from '@tabler/icons-react';
 import classes from './navigation-mode.module.scss';
 import { useNavigationStore } from '@/navigation/navigation-store';
 import { voiceService } from '@/voice/voice-service';
 import { MapContainer } from '@/map/map';
-import { useNavigationQuery } from './navigation.query';
-// Format helpers
+import { FocusMode } from './focus-mode';
+
+// Helper functions imported from focus-mode
 const formatDistance = (distance: { text: string; value: number }) => distance.text;
 
+const getInstructionText = (instruction: string) => {
+  if (!instruction) return "Continue";
+  
+  const cleanText = instruction.replace(/<[^>]+>/g, '');
+  
+  if (cleanText.includes("right")) {
+    return "Take a right";
+  } else if (cleanText.includes("left")) {
+    return "Take a left";
+  } else if (cleanText.includes("Continue")) {
+    return "Continue Straight";
+  } else if (cleanText.includes("Merge")) {
+    return "Merge";
+  } else if (cleanText.includes("Exit")) {
+    return "Take exit";
+  } else if (cleanText.includes("Stay")) {
+    return "Stay on the same road";
+  } else {
+    return "Continue";
+  }
+};
+
+const getNextManeuverIcon = (type: string | null | undefined) => {
+  if (!type) return <IconArrowBack className={classes.rotateUp} size={24} color="black" />;
+  
+  switch (type) {
+    case 'turn-right':
+    case 'turn-slight-right':
+    case 'turn-sharp-right':
+      return <IconArrowBack className={classes.rotateRight} size={24} color="black" />;
+    case 'turn-left':
+    case 'turn-slight-left':
+    case 'turn-sharp-left':
+      return <IconArrowBack className={classes.rotateLeft} size={24} color="black" />;
+    default:
+      return <IconArrowBack className={classes.rotateUp} size={24} color="black" />;
+  }
+};
+
+// Format time to compact version
+const formatCompactTime = (timeString: string) => {
+  const hourMatch = timeString.match(/(\d+)\s+hour/);
+  const minMatch = timeString.match(/(\d+)\s+min/);
+  
+  const hours = hourMatch ? hourMatch[1] : '0';
+  const mins = minMatch ? minMatch[1] : '0';
+  
+  if (parseInt(hours) > 0) {
+    return `${hours}h${mins}`;
+  } else {
+    return `${mins}m`;
+  }
+};
+
+// Calculate bearing between two coordinates
+const calculateBearing = (startLat: number, startLng: number, destLat: number, destLng: number) => {
+  startLat = startLat * Math.PI / 180;
+  startLng = startLng * Math.PI / 180;
+  destLat = destLat * Math.PI / 180;
+  destLng = destLng * Math.PI / 180;
+
+  const y = Math.sin(destLng - startLng) * Math.cos(destLat);
+  const x = Math.cos(startLat) * Math.sin(destLat) -
+            Math.sin(startLat) * Math.cos(destLat) * Math.cos(destLng - startLng);
+  let bearing = Math.atan2(y, x) * 180 / Math.PI;
+  if (bearing < 0) {
+    bearing += 360;
+  }
+  return bearing;
+};
+
+// Get the route-based heading for the current navigation step
+const getRouteHeading = (position: GeolocationPosition) => {
+  if (!currentRoute || !currentRoute.legs || !currentRoute.legs[0] || !currentRoute.legs[0].steps) {
+    return null;
+  }
+
+  // Get current step and next step
+  const steps = currentRoute.legs[0].steps;
+  const currentLeg = steps[currentStep];
+
+  // If we're at the last step, use the endpoint
+  if (currentStep >= steps.length - 1) {
+    const endLoc = currentRoute.legs[0].end_location;
+    return calculateBearing(
+      position.coords.latitude,
+      position.coords.longitude,
+      endLoc.lat,
+      endLoc.lng
+    );
+  }
+
+  // Otherwise use the next step's start location
+  const nextLeg = steps[currentStep + 1];
+  return calculateBearing(
+    position.coords.latitude,
+    position.coords.longitude,
+    nextLeg.start_location.lat,
+    nextLeg.start_location.lng
+  );
+};
+
 export function NavigationMode() {
-  const [isMuted, setIsMuted] = useState(false);
-  const [isCompactMode, setIsCompactMode] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [messages, setMessages] = useState<Array<{ type: 'user' | 'assistant'; text: string }>>([]);
-  const [inputMessage, setInputMessage] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null);
+  const [userPosition, setUserPosition] = useState<GeolocationPosition | null>(null);
+  const [userHeading, setUserHeading] = useState<number | null>(null);
+  const [showFocusMode, setShowFocusMode] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   
   const { 
     isNavigating, 
@@ -30,31 +132,148 @@ export function NavigationMode() {
     currentStep, 
     incrementStep, 
     endNavigation,
-    setCurrentStep
+    setMapInstance: storeSetMapInstance
   } = useNavigationStore();
-  
-  // Check if we should render this component
-  if (!isNavigating || !currentRoute) {
-    return null;
-  }
-  
-  const currentManeuver = currentRoute.legs[0]?.steps[currentStep] || null;
-  const nextManeuver = currentRoute.legs[0]?.steps[currentStep + 1] || null;
-  
-  // Toggle volume
-  const toggleVolume = () => {
-    const muted = voiceService.toggleMute();
-    setIsMuted(muted);
-  };
-  
-  // Toggle compact mode
-  const toggleCompactMode = () => {
-    setIsCompactMode(!isCompactMode);
+
+  // Set up geolocation watching
+  useEffect(() => {
+    // Only set up geolocation if we're navigating and not in focus mode
+    if (!isNavigating || !currentRoute || showFocusMode) {
+      return;
+    }
+    
+    let watchId: number | null = null;
+    
+    // Watch position with high accuracy
+    if (navigator.geolocation) {
+      watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          setUserPosition(position);
+          
+          // Update map center
+          if (mapInstance) {
+            const userLatLng = new google.maps.LatLng(
+              position.coords.latitude,
+              position.coords.longitude
+            );
+            
+            // Always center on user location
+            mapInstance.setCenter(userLatLng);
+            
+            // Set zoom level to high for navigation (closer view)
+            mapInstance.setZoom(19);
+            
+            // Determine heading - first try from route, then from device
+            let heading = getRouteHeading(position);
+            
+            // If route heading isn't available, try device heading as fallback
+            if (heading === null && position.coords.heading !== null && position.coords.heading !== undefined) {
+              heading = position.coords.heading;
+            }
+            
+            // Apply heading if available
+            if (heading !== null) {
+              setUserHeading(heading);
+              mapInstance.setHeading(heading);
+              // Add tilt for 3D-like perspective
+              mapInstance.setTilt(60);
+            }
+          }
+        },
+        (error) => {
+          console.error('Error getting geolocation:', error);
+        },
+        { 
+          enableHighAccuracy: true, 
+          maximumAge: 0,
+          timeout: 5000 
+        }
+      );
+    }
+    
+    return () => {
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+    };
+  }, [mapInstance, isNavigating, currentRoute, currentStep, showFocusMode]);
+
+  // Save map instance to store and local state
+  const handleMapLoaded = (map: google.maps.Map) => {
+    setMapInstance(map);
+    storeSetMapInstance(map);
+    
+    // Set initial map options for navigation-style view
+    map.setOptions({
+      zoom: 19,
+      mapTypeId: google.maps.MapTypeId.ROADMAP,
+      tilt: 60,
+      mapTypeControl: false,
+      fullscreenControl: false,
+      streetViewControl: false,
+      rotateControl: false,
+      zoomControl: false,
+      scaleControl: false
+    });
+    
+    // Enable navigation mode specific settings
+    map.setOptions({
+      heading: 0, // Will be updated with route or geolocation
+      rotateControl: true,
+      tilt: 60
+    });
+    
+    // Try to get current position immediately to set up the map
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const userLatLng = new google.maps.LatLng(
+            position.coords.latitude,
+            position.coords.longitude
+          );
+          
+          map.setCenter(userLatLng);
+          
+          // Try to get initial heading from route if available
+          if (currentRoute && currentRoute.legs && currentRoute.legs[0]?.steps) {
+            const initialHeading = getRouteHeading(position);
+            if (initialHeading !== null) {
+              map.setHeading(initialHeading);
+            }
+          }
+        },
+        (error) => {
+          console.error('Error getting initial position:', error);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 5000,
+          maximumAge: 0
+        }
+      );
+    }
   };
   
   // Exit navigation
   const handleExitNavigation = () => {
     endNavigation();
+  };
+  
+  // Toggle volume
+  const toggleVolume = () => {
+    const muted = voiceService.toggleMute();
+    setIsMuted(muted);
+    setStatusMessage(muted ? "Voice muted" : "Voice unmuted");
+    
+    // Clear status message after 3 seconds
+    setTimeout(() => {
+      setStatusMessage(null);
+    }, 3000);
+  };
+  
+  // Switch to focus mode
+  const switchToFocusMode = () => {
+    setShowFocusMode(true);
   };
 
   // Start voice input
@@ -65,190 +284,110 @@ export function NavigationMode() {
       return;
     }
 
-    const success = voiceService.startListening(
-      (text) => {
-        console.log('Voice input:', text);
-        // Process voice commands
-        if (text.toLowerCase().includes('exit') || text.toLowerCase().includes('stop')) {
-          endNavigation();
-        } else if (text.toLowerCase().includes('next')) {
-          incrementStep();
-        } else if (text.toLowerCase().includes('repeat')) {
-          // Repeat current instruction
-          if (currentManeuver) {
-            voiceService.speak(currentManeuver.html_instructions);
-          }
-        }
-        setIsListening(false);
-      },
-      () => {
-        setIsListening(false);
-      }
-    );
-
-    if (success) {
-      setIsListening(true);
-    }
-  };
-
-  // Get the appropriate icon class based on maneuver type
-  const getManeuverIconClass = (type: string | null | undefined): string => {
-    if (!type) return 'fa-arrow-up';
+    setIsListening(true);
     
-    const iconMap: Record<string, string> = {
-      'turn-slight-left': 'fa-arrow-left fa-rotate-45',
-      'turn-left': 'fa-arrow-left',
-      'turn-sharp-left': 'fa-arrow-left fa-rotate-315',
-      'uturn-left': 'fa-undo',
-      'turn-slight-right': 'fa-arrow-right fa-rotate-315',
-      'turn-right': 'fa-arrow-right',
-      'turn-sharp-right': 'fa-arrow-right fa-rotate-45',
-      'uturn-right': 'fa-redo',
-      'straight': 'fa-arrow-up',
-      'roundabout': 'fa-sync',
-      'rotary': 'fa-sync',
-      'roundabout-exit': 'fa-sign-out-alt',
-      'rotary-exit': 'fa-sign-out-alt',
-      'arrive': 'fa-flag-checkered',
-      'depart': 'fa-play',
-      'merge': 'fa-compress-alt',
-      'fork': 'fa-code-branch',
-      'ramp': 'fa-level-up-alt'
-    };
-    
-    return `fas ${iconMap[type] || 'fa-arrow-up'}`;
-  };
-  
-  const handleSendMessage = async () => {
-    if (!inputMessage.trim() || isProcessing) return;
-
-    const userMessage = inputMessage.trim();
-    setInputMessage('');
-    setMessages(prev => [...prev, { type: 'user', text: userMessage }]);
-    setIsProcessing(true);
-
-    try {
-      // Get current location for context
-      let currentLocation = null;
-      if (navigator.geolocation) {
-        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject);
-        });
-        currentLocation = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude
-        };
-      }
-
-      // Create navigation context
-      const navigationContext = {
-        current_location: currentLocation,
-        destination: currentRoute.legs[0].end_address,
-        next_turn: currentManeuver?.html_instructions,
-        distance_remaining: currentRoute.legs[0].steps[currentStep].distance
-      };
-
-      // Process the navigation query through the API
-      const response = await useNavigationQuery.apiCall({
-        query: userMessage,
-        location: currentLocation
-      });
+    voiceService.startListening().then(transcript => {
+      console.log('Voice input:', transcript);
       
-      if (response && response.data) {
-        setMessages(prev => [...prev, { type: 'assistant', text: response.data.response }]);
-        voiceService.speak(response.data.response);
-
-        // Handle specific query types
-        if (response.data.query_type === 'traffic' && response.data.traffic_info) {
-          // Update UI with traffic information
-          console.log('Traffic info:', response.data.traffic_info);
-        } else if (response.data.query_type === 'nearby_place' && response.data.places) {
-          // Update UI with nearby places
-          console.log('Nearby places:', response.data.places);
-        } else if (response.data.query_type === 'route_feature') {
-          // Handle route feature information
-          console.log('Route feature:', response.data.feature);
-        }
-      } else {
-        throw new Error('Invalid response from server');
+      // Process voice commands
+      if (transcript.toLowerCase().includes('exit') || transcript.toLowerCase().includes('stop')) {
+        endNavigation();
+      } else if (transcript.toLowerCase().includes('next')) {
+        incrementStep();
+      } else if (transcript.toLowerCase().includes('focus mode') || transcript.toLowerCase().includes('focus')) {
+        switchToFocusMode();
       }
-    } catch (error) {
-      console.error('Error processing message:', error);
-      const errorMessage = "Sorry, I couldn't process your request. Please try again.";
-      setMessages(prev => [...prev, { type: 'assistant', text: errorMessage }]);
-      voiceService.speak(errorMessage);
-    } finally {
-      setIsProcessing(false);
-    }
+      setIsListening(false);
+    }).catch(error => {
+      console.error('Error processing voice input:', error);
+      setIsListening(false);
+    });
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
-  };
+  // Check if we should render this component
+  if (!isNavigating || !currentRoute) {
+    return null;
+  }
 
-  // Full navigation view
-  if (!isCompactMode) {
-    return (
-      <div className={classes.navigationMode}>
-        <div className={classes.header}>
-          <button className={classes.exitButton} onClick={handleExitNavigation}>
-            <IconArrowBack size={20} />
-          </button>
-          <div className={classes.title}>
-            <h3>Navigating to {currentRoute.legs[0].end_address}</h3>
-          </div>
-          <div className={classes.controls}>
-            <button 
-              className={`${classes.controlButton} ${isMuted ? classes.muted : ''}`}
-              onClick={toggleVolume}
-            >
-              {isMuted ? <IconVolumeOff size={20} /> : <IconVolume size={20} />}
-            </button>
-            <button 
-              className={classes.controlButton}
-              onClick={toggleCompactMode}
-            >
-              <IconArrowsMinimize size={20} />
-            </button>
-          </div>
+  // If focus mode is active, show the focused navigation view
+  if (showFocusMode) {
+    return <FocusMode onExit={() => setShowFocusMode(false)} onBack={() => endNavigation()} onSwitchToMap={() => setShowFocusMode(false)} />;
+  }
+  
+  // Get current and next maneuver data
+  const currentManeuver = currentRoute.legs[0]?.steps[currentStep] || null;
+  const nextManeuver = currentRoute.legs[0]?.steps[currentStep + 1] || null;
+  
+  // Estimated time left based on the route data
+  const estimatedTimeLeft = currentRoute.legs[0]?.duration.text || '';
+  const compactTimeLeft = formatCompactTime(estimatedTimeLeft);
+
+  return (
+    <div className={classes.navigationMode}>
+      {/* Header with back button, ETA, and volume control */}
+      <div className={classes.header}>
+        <button className={classes.headerButton} onClick={handleExitNavigation}>
+          <IconArrowBack size={20} />
+        </button>
+        
+        <div className={classes.etaDisplay}>
+          ETA: <strong>{compactTimeLeft}</strong>
         </div>
         
-        {currentManeuver && (
-          <div className={classes.currentManeuver}>
-            <div className={classes.maneuverIcon}>
-              <i className={getManeuverIconClass(currentManeuver.maneuver)} />
-            </div>
-            <div className={classes.maneuverDetails}>
-              <div 
-                className={classes.instruction}
-                dangerouslySetInnerHTML={{ __html: currentManeuver.html_instructions }}
-              />
-              <div className={classes.distance}>
-                {formatDistance(currentManeuver.distance)}
-              </div>
-            </div>
+        <button 
+          className={classes.headerButton}
+          onClick={toggleVolume}
+        >
+          {isMuted ? <IconVolumeOff size={20} /> : <IconVolume size={20} />}
+        </button>
+      </div>
+      
+      {/* Main map view */}
+      <div className={classes.mapFullscreen}>
+        <MapContainer onMapLoaded={handleMapLoaded} hideSearch={true} />
+        
+        {/* Status message overlay (when active) */}
+        {statusMessage && (
+          <div className={classes.statusMessage}>
+            {statusMessage}
           </div>
         )}
-        
-        {nextManeuver && (
+      </div>
+
+      {/* Footer with next direction and controls */}
+      <div className={classes.footer}>
+        {/* Next maneuver info */}
+        {nextManeuver ? (
           <div className={classes.nextManeuver}>
-            <div className={classes.nextLabel}>THEN</div>
-            <div className={classes.nextInstruction}>
-              <div className={classes.nextManeuverIcon}>
-                <i className={getManeuverIconClass(nextManeuver.maneuver)} />
-              </div>
-              <div 
-                className={classes.nextText}
-                dangerouslySetInnerHTML={{ __html: nextManeuver.html_instructions }}
-              />
+            <div className={classes.nextManeuverIcon}>
+              <span className={classes.nextLabel}>Next:</span>
+              {getNextManeuverIcon(nextManeuver.maneuver)}
             </div>
+            
+            <div className={classes.nextManeuverText}>
+              {getInstructionText(nextManeuver.html_instructions)}
+            </div>
+            
+            <div className={classes.nextManeuverDistance}>
+              {formatDistance(nextManeuver.distance)}
+            </div>
+          </div>
+        ) : (
+          <div className={classes.arrivingText}>
+            Arriving at destination
           </div>
         )}
         
-        <div className={classes.bottomControls}>
+        {/* Control buttons */}
+        <div className={classes.controls}>
+          <button 
+            className={classes.focusModeButton}
+            onClick={switchToFocusMode}
+            title="Switch to Focus Mode"
+          >
+            <IconFocus size={24} />
+          </button>
+          
           <button 
             className={`${classes.micButton} ${isListening ? classes.active : ''}`}
             onClick={startVoiceInput}
@@ -256,111 +395,10 @@ export function NavigationMode() {
             <IconMicrophone size={24} />
           </button>
         </div>
-
-        <div className={classes.mapContainer}>
-          <MapContainer />
-        </div>
-
-        <div className={classes.chatBox}>
-          <div className={classes.chatHeader}>
-            <span>Navigation Assistant</span>
-            <button onClick={handleExitNavigation} className={classes.controlButton}>
-              <IconX size={20} />
-            </button>
-          </div>
-          <div className={classes.chatMessages}>
-            {messages.map((message, index) => (
-              <div 
-                key={index} 
-                className={`${classes.message} ${message.type === 'user' ? classes.userMessage : classes.assistantMessage}`}
-              >
-                {message.text}
-              </div>
-            ))}
-          </div>
-          <div className={classes.chatInput}>
-            <input
-              type="text"
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Type your message..."
-              disabled={isProcessing}
-            />
-            <button 
-              onClick={handleSendMessage}
-              disabled={!inputMessage.trim() || isProcessing}
-            >
-              <IconSend size={20} />
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-  
-  // Compact navigation view
-  return (
-    <div className={`${classes.navigationMode} ${classes.compact}`}>
-      <div className={classes.compactHeader}>
-        <button className={classes.backButton} onClick={handleExitNavigation}>
-          <IconArrowBack size={20} />
-        </button>
-        <div className={classes.compactInfo}>
-          <div className={classes.compactDistance}>
-            {currentManeuver ? formatDistance(currentManeuver.distance) : ''}
-          </div>
-        </div>
-        <button 
-          className={classes.expandButton} 
-          onClick={toggleCompactMode}
-        >
-          <IconArrowsMinimize size={20} />
-        </button>
-      </div>
-      
-      {currentManeuver && (
-        <div className={classes.compactManeuver}>
-          <div className={`${classes.maneuverIcon} ${classes[getManeuverIconClass(currentManeuver.maneuver)]}`} />
-        </div>
-      )}
-
-      <div className={classes.mapContainer}>
-        <MapContainer />
-      </div>
-
-      <div className={classes.chatBox}>
-        <div className={classes.chatHeader}>
-          <span>Navigation Assistant</span>
-          <button onClick={handleExitNavigation} className={classes.controlButton}>
-            <IconX size={20} />
-          </button>
-        </div>
-        <div className={classes.chatMessages}>
-          {messages.map((message, index) => (
-            <div 
-              key={index} 
-              className={`${classes.message} ${message.type === 'user' ? classes.userMessage : classes.assistantMessage}`}
-            >
-              {message.text}
-            </div>
-          ))}
-        </div>
-        <div className={classes.chatInput}>
-          <input
-            type="text"
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Type your message..."
-            disabled={isProcessing}
-          />
-          <button 
-            onClick={handleSendMessage}
-            disabled={!inputMessage.trim() || isProcessing}
-          >
-            <IconSend size={20} />
-          </button>
+        
+        {/* Hint text */}
+        <div className={classes.hintText}>
+          Say "Hey Saarthi" to activate voice assistant
         </div>
       </div>
     </div>

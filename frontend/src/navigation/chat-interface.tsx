@@ -66,7 +66,8 @@ export function ChatInterface() {
         distance_remaining: distanceRemaining,
         time_remaining: timeRemaining,
         current_time: new Date().toLocaleTimeString(),
-        current_date: new Date().toLocaleDateString()
+        current_date: new Date().toLocaleDateString(),
+        route_info: currentRoute
       };
 
       // Send request to LLM API

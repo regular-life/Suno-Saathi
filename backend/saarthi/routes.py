@@ -1,15 +1,15 @@
+import asyncio
 import json
-from typing import Optional
 import uuid
 from collections import deque
-import asyncio
-from fastapi.responses import StreamingResponse
 from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 
 from core.config import CONFIG
-from modules.llm_interface import generate_reply, session_manager, DEFAULT_CONTEXT
+from modules.llm_interface import DEFAULT_CONTEXT, generate_reply, session_manager
 from modules.navigation import NavigationHandler
 
 from .schemas import (
@@ -37,15 +37,13 @@ navigation = NavigationHandler()
 # Debug logs for wake word detection (keep track of recent logs)
 voice_debug_logs = deque(maxlen=100)  # Store last 100 log entries
 
+
 def add_voice_debug_log(message: str, log_type: str = "info"):
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-    log_entry = {
-        "timestamp": timestamp,
-        "message": message,
-        "type": log_type
-    }
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    log_entry = {"timestamp": timestamp, "message": message, "type": log_type}
     voice_debug_logs.append(log_entry)
     print(f"[VOICE DEBUG] {timestamp} - {message}")
+
 
 # Navigation API routes - consolidated endpoints (supporting both GET and POST)
 @router.get("/navigation/directions", response_model=DirectionsResponse)
@@ -99,22 +97,22 @@ async def process_navigation_query(request: NavigationQueryRequest):
         session_id = None
         if request.context and "session_id" in request.context:
             session_id = request.context["session_id"]
-        
+
         # Create navigation-specific context
         nav_context = {}
         if request.context:
             nav_context = {k: v for k, v in request.context.items() if k != "session_id"}
-        
+
         # Generate prompt with context
         context_text = ""
         if nav_context:
             context_text = f"Navigation Context: {json.dumps(nav_context)}\n"
-        
+
         # Use session manager to get response
         if session_id:
             # Use existing session
             response = session_manager.get_response(session_id, f"{context_text}Navigation query: {request.query}")
-            
+
             if response and response.get("status") == "success":
                 return NavigationQueryResponse(
                     query_type="llm_processed",
@@ -125,7 +123,7 @@ async def process_navigation_query(request: NavigationQueryRequest):
             # Create new session with navigation-specific prompt
             prompt = f"{context_text}User's navigation query: {request.query}\n\nInterpret this navigation-related query and provide a helpful response:"
 
-                # Generate response using LLM without session (legacy mode)
+            # Generate response using LLM without session (legacy mode)
             response = generate_reply(prompt)
 
         # Extract response text
@@ -164,7 +162,7 @@ async def process_navigation_query(request: NavigationQueryRequest):
             # Fallback traffic response
             response_data.response = (
                 "Let me check the traffic conditions for you. Please make sure your location is enabled."
-                )
+            )
             return response_data
 
         # Default response
@@ -187,7 +185,7 @@ async def detect_wake_word(request: WakeWordRequest):
 
         # Debug output
         add_voice_debug_log(f"Received text: '{request.text}'", "wake_word")
-        
+
         # Primary wake words
         primary_wake_words = [
             "suno sathi",
@@ -201,9 +199,7 @@ async def detect_wake_word(request: WakeWordRequest):
         variant_wake_words = [
             # Common mishearings or spellings
             "he sathi",
-            "he shaadi"
-            "he shadi"
-            "he saarthi",
+            "he shaadi" "he shadi" "he saarthi",
             "he sarathi",
             "he saarti",
             "he sakshi",
@@ -222,7 +218,6 @@ async def detect_wake_word(request: WakeWordRequest):
             "hi sathi",
             "hello sathi",
             "he sathi",
-            
             # English alternatives
             "listen sathi",
             "yo sathi",
@@ -251,9 +246,10 @@ async def detect_wake_word(request: WakeWordRequest):
             (word for word in primary_wake_words + variant_wake_words if word in text_lower),
             None,
         )
-        add_voice_debug_log(f"Detected: {detected}, Confidence: {confidence}, Wake word found: {wake_word_found}", 
-                           "wake_word_result")
-        
+        add_voice_debug_log(
+            f"Detected: {detected}, Confidence: {confidence}, Wake word found: {wake_word_found}", "wake_word_result"
+        )
+
         return WakeWordResponse(
             detected=detected,
             confidence=confidence,
@@ -274,116 +270,98 @@ async def process_llm_query(request: LLMQueryRequest):
     # Debug output
     add_voice_debug_log(f"Received query: '{request.query}'", "command")
     add_voice_debug_log(f"Context: {request.context}", "command_context")
-    
+
     try:
         # Get or create the session ID
         session_id = None
         context = None
-        
+
         # Check if the context is a string (possibly a session ID)
         if request.context and isinstance(request.context, str):
             session_id = request.context
         # Otherwise, it might be a dictionary with navigation context
         elif request.context and isinstance(request.context, dict):
             context = request.context
-            if 'session_id' in context:
-                session_id = context.pop('session_id')
-        
+            if "session_id" in context:
+                session_id = context.pop("session_id")
+
         if not session_id:
             session_id = str(uuid.uuid4())
-        
-        # Determine if this is a navigation-related query
-        is_navigation = False
+
         navigation_context = {}
-        
-        if context and 'context' in context and context['context'] == 'navigation':
-            is_navigation = True
-            
+
+        if context and "context" in context and context["context"] == "navigation":
+
             # Extract navigation data from context
             navigation_context = {
-                'current_location': context.get('current_location'),
-                'destination': context.get('destination'),
-                'next_turn': context.get('next_turn'),
-                'distance_remaining': context.get('distance_remaining'),
-                'time_remaining': context.get('time_remaining')
+                "current_location": context.get("current_location"),
+                "destination": context.get("destination"),
+                "next_turn": context.get("next_turn"),
+                "distance_remaining": context.get("distance_remaining"),
+                "time_remaining": context.get("time_remaining"),
             }
-            
+
             # Add all future directions if available
-            if 'future_directions' in context:
-                navigation_context['future_directions'] = context['future_directions']
-            elif 'route' in context and 'legs' in context['route'] and len(context['route']['legs']) > 0:
+            if "future_directions" in context:
+                navigation_context["future_directions"] = context["future_directions"]
+            elif "route" in context and "legs" in context["route"] and len(context["route"]["legs"]) > 0:
                 # Extract directions from route object
-                steps = context['route']['legs'][0].get('steps', [])
+                steps = context["route"]["legs"][0].get("steps", [])
                 future_directions = []
-                
+
                 for i, step in enumerate(steps):
                     direction = {
-                        'instruction': step.get('html_instructions', ''),
-                        'distance': step.get('distance', {}).get('text', ''),
-                        'maneuver': step.get('maneuver'),
+                        "instruction": step.get("html_instructions", ""),
+                        "distance": step.get("distance", {}).get("text", ""),
+                        "maneuver": step.get("maneuver"),
                     }
                     future_directions.append(direction)
-                
-                navigation_context['future_directions'] = future_directions
-        
-        # Use the appropriate LLM interface function based on the context
-        if is_navigation:
-            # Use the specialized navigation prompt processor from llm_interface
-            from modules.llm_interface import process_navigation_prompt
-            response = process_navigation_prompt(
-                request.query, 
-                navigation_context=navigation_context,
-                session_id=session_id
-            )
-        else:
-            # Create custom prompt if we have context but it's not navigation
-            custom_prompt = None
-            if context:
-                # Format the context for better readability in the prompt
-                context_str = "\n".join([f"{key}: {value}" for key, value in context.items()])
-                custom_prompt = DEFAULT_CONTEXT + f"\n\nContext:\n{context_str}\n"
-            
-            # Get or create session with custom prompt
-            if custom_prompt and not session_manager.get_session(session_id):
-                session_id = session_manager.create_session(session_id, custom_prompt)
-                
-            # Get response using SessionManager
-            response = session_manager.get_response(session_id, request.query)
-        
+
+                navigation_context["future_directions"] = future_directions
+
+        # Use the specialized navigation prompt processor from llm_interface
+        from modules.llm_interface import process_navigation_prompt
+
+        response = process_navigation_prompt(
+            request.query, navigation_context=navigation_context, session_id=session_id
+        )
+
         # Extract response text and double-check that it's clean
         if response and response.get("status") == "success":
             clean_response = response.get("response", "")
-            
+
             # Apply a secondary cleaning if needed to ensure no debugging text remains
             from modules.llm_interface import clean_llm_response
+
             clean_response = clean_llm_response(clean_response)
-            
+
             return LLMQueryResponse(
                 response=clean_response,
                 status="success",
-                metadata={"session_id": response.get("session_id", session_id)}
+                metadata={"session_id": response.get("session_id", session_id)},
             )
         else:
             return LLMQueryResponse(
                 response="I couldn't process your request at this time.",
                 status="error",
-                metadata={"session_id": session_id}
+                metadata={"session_id": session_id},
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.get("/debug/voice-logs")
 async def stream_voice_debug_logs():
     """Stream voice recognition debug logs as server-sent events"""
-    
+
     async def event_generator():
         # First, yield all existing logs
         for log in list(voice_debug_logs):
             yield f"data: {json.dumps(log)}\n\n"
-        
+
         # Set up a counter to track position in the log queue
         last_idx = len(voice_debug_logs)
-        
+
         # Keep connection open and stream new logs as they arrive
         while True:
             if len(voice_debug_logs) > last_idx:
@@ -392,15 +370,15 @@ async def stream_voice_debug_logs():
                 for log in new_logs:
                     yield f"data: {json.dumps(log)}\n\n"
                 last_idx = len(voice_debug_logs)
-            
+
             # Sleep to avoid excessive CPU usage
             await asyncio.sleep(0.5)
-    
+
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-        }
+        },
     )

@@ -67,6 +67,9 @@ class VoiceService {
   private onWakeWordCallback: (() => void) | null = null;
   private statusUpdateCallback: ((status: string) => void) | null = null;
 
+  // Whether assistant mode is active
+  private assistantActive: boolean = false;
+
   constructor() {
     if (typeof window !== 'undefined') {
     this.initSpeechRecognition();
@@ -182,43 +185,36 @@ class VoiceService {
     this.wakeWordRecognition.onresult = async (event: any) => {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript.trim().toLowerCase();
-        
-        // Debug output - show what's being heard
         console.log('[Wake Word Debug] Heard:', transcript);
         this.updateStatus(`Heard: ${transcript}`);
-        
-        // Check if we should use backend for wake word detection
+
+        // Attempt backend detection
+        let detected = false;
         try {
-          const wakeWordDetected = await this.detectWakeWordWithBackend(transcript);
-          
-          if (wakeWordDetected) {
-            console.log('Wake word detected via backend API');
-            
-            this.stopWakeWordDetection();
-            this.playSound(WAKE_SOUND_PATH);
-        
-            if (this.onWakeWordCallback) {
-              this.onWakeWordCallback();
-            }
-            
-            return;
-          }
+          detected = await this.detectWakeWordWithBackend(transcript);
+          console.log('[Wake Word Debug] Backend detected:', detected);
         } catch (error) {
-          console.warn('Error with backend wake word detection, falling back to local detection', error);
-          
-          // Fallback to local detection
+          console.warn('Error with backend wake word detection, will use local fallback', error);
+        }
+
+        // Local fallback if backend did not detect
+        if (!detected) {
           const similarity = this.stringSimilarity(WAKE_WORD, transcript);
-          console.log(`[Wake Word Debug] Similarity score: ${similarity}`);
+          console.log(`[Wake Word Debug] Local similarity: ${similarity}`);
           if (similarity >= WAKE_WORD_THRESHOLD) {
+            detected = true;
             console.log('Wake word detected locally with similarity:', similarity);
-            
-            this.stopWakeWordDetection();
-            this.playSound(WAKE_SOUND_PATH);
-        
-            if (this.onWakeWordCallback) {
-              this.onWakeWordCallback();
-            }
           }
+        }
+
+        if (detected) {
+          // Wake word detected
+          this.stopWakeWordDetection();
+          this.playSound(WAKE_SOUND_PATH);
+          if (this.onWakeWordCallback) {
+            this.onWakeWordCallback();
+          }
+          return;
         }
       }
     };
@@ -352,6 +348,75 @@ class VoiceService {
       this.state.isWakeWordListening = false;
     } catch (error) {
       console.error('Error stopping wake word detection:', error);
+    }
+  }
+
+  /**
+   * Start the continuous assistant mode: listen for wake word, process commands
+   */
+  public startAssistant(): boolean {
+    if (!this.isSpeechRecognitionSupported()) {
+      this.updateStatus('Speech recognition not supported');
+      return false;
+    }
+    if (this.assistantActive) return true;
+    this.assistantActive = true;
+    // Request mic permission
+    navigator.mediaDevices.getUserMedia({ audio: true }).catch(err => {
+      console.error('Microphone permission denied', err);
+      this.updateStatus('Microphone permission required');
+      this.assistantActive = false;
+    });
+    this.updateStatus('Listening for wake word...');
+    this.startWakeWordMode();
+    return true;
+  }
+
+  /**
+   * Stop the assistant mode
+   */
+  public stopAssistant(): void {
+    this.assistantActive = false;
+    this.stopWakeWordDetection();
+    this.stopListening();
+    this.updateStatus('Idle');
+  }
+
+  /**
+   * Internal: start wake word detection with assistant callback
+   */
+  private startWakeWordMode(): void {
+    this.startWakeWordDetection(async () => {
+      // On wake word detected
+      await this.handleCommandCycle();
+    });
+  }
+
+  /**
+   * Internal: after wake word, listen for command, send to LLM, speak, then restart wake word
+   */
+  private async handleCommandCycle(): Promise<void> {
+    if (!this.assistantActive) return;
+    // Listen for user command after wake word
+    this.updateStatus('Listening for command...');
+    const command = await this.listenWithSilenceTimeout(2000);
+    if (!command) {
+      this.updateStatus('No command detected, listening for wake word...');
+      if (this.assistantActive) this.startWakeWordMode();
+      return;
+    }
+    // Process with LLM
+    this.updateStatus('Processing your request...');
+    const llmResponse = await this.processWithLLM(command, {});
+    // Speak the response
+    if (llmResponse && llmResponse.response) {
+      this.updateStatus('Speaking response...');
+      await new Promise<void>(resolve => this.speak(llmResponse.response, resolve));
+    }
+    // Restart wake word listening
+    if (this.assistantActive) {
+      this.updateStatus('Listening for wake word...');
+      this.startWakeWordMode();
     }
   }
 
@@ -561,27 +626,50 @@ class VoiceService {
         session_id: this.state.currentSessionId,
         context: "navigation"
       };
-      
-      const response = await fetch('/api/llm/query', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          query: command,
-          context: contextData
-        }),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to get LLM response: ${response.status}`);
+
+      // Attempt direct FastAPI LLM endpoint
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
+      const llmUrl = apiBase.endsWith('/')
+        ? `${apiBase}api/llm/query`
+        : `${apiBase}/api/llm/query`;
+
+      let response: Response;
+      let usedBackend = true;
+
+      try {
+        response = await fetch(llmUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: command, context: contextData }),
+        });
+      } catch (err) {
+        console.warn('Direct backend LLM fetch error, falling back to Next.js API:', err);
+        usedBackend = false;
+        response = await fetch('/api/llm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: command, sessionId: this.state.currentSessionId }),
+        });
       }
-      
+
+      if (!response.ok) {
+        console.warn('Direct backend LLM returned status', response.status, 'falling back to Next.js API');
+        usedBackend = false;
+        response = await fetch('/api/llm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: command, sessionId: this.state.currentSessionId }),
+        });
+      }
+
+      if (!response.ok) {
+        throw new Error(`Failed to get LLM response after fallback: ${response.status}`);
+      }
+
       const data = await response.json();
-      
-      // Update session ID for conversation continuity
-      if (data.metadata?.session_id) {
-        this.state.currentSessionId = data.metadata.session_id;
+      // If used Next.js API, newSessionId is in data.sessionId
+      if (!usedBackend && data.sessionId) {
+        this.state.currentSessionId = data.sessionId;
       }
       
       return {

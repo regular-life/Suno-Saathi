@@ -180,7 +180,8 @@ class ErrorResponse(BaseModel):
 # LLM schemas
 class LLMQueryRequest(BaseModel):
     query: str
-    context: Optional[str] = None
+    # Allow context to be either session ID (str) or a dict of context data
+    context: Optional[Union[str, Dict[str, Any]]] = None
     
 class LLMQueryResponse(BaseModel):
     response: str

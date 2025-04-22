@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import speech_recognition as sr
 
 # Define wake words list - could be moved to a config file later
-WAKE_WORDS = ["suno sathi", "he saarthi", "hello sarathi"]
+WAKE_WORDS = ["suno sathi", "he sathi", "hello sathi"]
 
 
 class WakeWordDetector:
@@ -13,46 +13,44 @@ class WakeWordDetector:
         pause_threshold=0.8,
         wake_words: Optional[List[str]] = None,
     ):
-        """
-        Initialize the wake word detector with configurable parameters.
-
-        Args:
-            energy_threshold: Adjust for ambient noise (higher = more noise tolerance).
-            pause_threshold: How long of a pause before finishing a phrase.
-            wake_words: Optional list of wake word phrases to override defaults
-        """
         self.recognizer = sr.Recognizer()
         self.recognizer.energy_threshold = energy_threshold
         self.recognizer.pause_threshold = pause_threshold
+        self.recognizer.non_speaking_duration = 2  # Stop after 2s of silence
         self.microphone = sr.Microphone()
-        self.active = False  # If True, we've heard the wake word
+        self.active = False
         self.wake_words = wake_words if wake_words is not None else WAKE_WORDS
 
-    def listen_for_wake_word(self) -> str:
-        """
-        Listen from microphone and transcribe speech to text.
 
-        Returns:
-            Recognized text or empty string if none recognized
-        """
-        with self.microphone as source:
-            # Optional: Adjust for ambient noise, at the cost of some overhead
-            self.recognizer.adjust_for_ambient_noise(source, duration=1)
+        def listen_for_wake_word(self) -> str:
+            """
+            Listen from microphone and transcribe speech to text.
 
-            print("[STANDBY] Listening for wake word...")
-            audio = self.recognizer.listen(source, phrase_time_limit=5)
+            Returns:
+                Recognized text or empty string if none recognized
+            """
+            with self.microphone as source:
+                # Optional: Adjust for ambient noise, at the cost of some overhead
+                self.recognizer.adjust_for_ambient_noise(source, duration=1)
 
-        try:
-            text = self.recognizer.recognize_google(audio, language="en-IN")
-            text = text.lower().strip()
-            print(f"[DEBUG] Heard: {text}")
-            return text
-        except sr.UnknownValueError:
-            # Could not understand audio
-            return ""
-        except sr.RequestError as e:
-            print(f"[ERROR] SpeechRecognition Error: {e}")
-            return ""
+                # Ensure silence cutoff is always applied
+                self.recognizer.non_speaking_duration = self.non_speaking_duration
+
+                print("[STANDBY] Listening for wake word...")
+                audio = self.recognizer.listen(source, phrase_time_limit=5)
+
+            try:
+                text = self.recognizer.recognize_google(audio, language="en-IN")
+                text = text.lower().strip()
+                print(f"[DEBUG] Heard: {text}")
+                return text
+            except sr.UnknownValueError:
+                # Could not understand audio
+                return ""
+            except sr.RequestError as e:
+                print(f"[ERROR] SpeechRecognition Error: {e}")
+                return ""
+
 
     def detect_wake_word(self, text: str) -> bool:
         """
@@ -82,6 +80,10 @@ class WakeWordDetector:
         """
         with self.microphone as source:
             print(f"[ACTIVE] Listening for command (timeout: {timeout}s)...")
+
+            # Ensure silence cutoff is applied here too
+            self.recognizer.non_speaking_duration = self.non_speaking_duration
+
             try:
                 audio = self.recognizer.listen(source, timeout=timeout)
 

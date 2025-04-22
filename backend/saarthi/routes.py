@@ -189,19 +189,44 @@ async def detect_wake_word(request: WakeWordRequest):
         add_voice_debug_log(f"Received text: '{request.text}'", "wake_word")
         
         # Primary wake words
-        primary_wake_words = ["suno saarthi", "hello saarthi"]
+        primary_wake_words = [
+            "suno sathi",
+            "hello sathi",
+            "hey sathi",
+            "hi sathi",
+            "he sathi",  # Spoken-style Hindi-English blend
+        ]
 
         # Variant spellings and phonetic matches
         variant_wake_words = [
-            "suno sarathi",
-            "suno sarthi",
-            "suno saarti",
-            "sunno saarthi",
-            "sonu saarthi",
-            "soonu saarthi",
-            "hey saarthi",
-            "hi saarthi",
-            "ok saarthi",
+            # Common mishearings or spellings
+            "he sathi",
+            "he shaadi"
+            "he shadi"
+            "he saarthi",
+            "he sarathi",
+            "he saarti",
+            "sunno sathi",
+            "sunno sathi",
+            "sonu sathi",
+            "sonu sathi",
+            "soonu sathi",
+            "suno sati",
+            "suno saati",
+            
+            # Prefix variations
+            "ok sathi",
+            "okay sathi",
+            "hey sathi",
+            "hi sathi",
+            "hello sathi",
+            "he sathi",
+            
+            # English alternatives
+            "listen sathi",
+            "yo sathi",
+            "hey buddy",
+            "hello buddy",
         ]
 
         text_lower = request.text.lower()

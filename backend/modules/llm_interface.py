@@ -259,6 +259,7 @@ session_manager = SessionManager()
 def generate_reply(
     prompt: str,
     include_context: bool = True,
+    session_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Generate response with dynamic token handling and navigation context
@@ -266,23 +267,31 @@ def generate_reply(
     Args:
         prompt: The user input prompt
         include_context: Whether to include the default assistant context
+        session_id: Optional session ID to include chat history
 
     Returns:
         Dict containing response status and text
     """
-    # Add context if requested
-    full_prompt = DEFAULT_CONTEXT + "\n\nUser: " + prompt + "\nSaarthi:" if include_context else prompt
+    if session_id:
+        session = session_manager.get_session(session_id)
+        if session:
+            full_prompt = session.get_formatted_history() + "\nUser: " + prompt + "\nSaarthi:"
+        else:
+            full_prompt = DEFAULT_CONTEXT + "\n\nUser: " + prompt + "\nSaarthi:" if include_context else prompt
+    else:
+        full_prompt = DEFAULT_CONTEXT + "\n\nUser: " + prompt + "\nSaarthi:" if include_context else prompt
 
     return llm.chat(full_prompt)
 
 
-def process_navigation_prompt(user_query: str, navigation_context: Optional[Dict] = None) -> Dict[str, Any]:
+def process_navigation_prompt(user_query: str, navigation_context: Optional[Dict] = None, session_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Process a navigation-related prompt with specific context
 
     Args:
         user_query: The user's navigation question
         navigation_context: Optional dict with current route, location, etc.
+        session_id: Optional session ID to include chat history
 
     Returns:
         Dict with response formatted for navigation
@@ -290,14 +299,14 @@ def process_navigation_prompt(user_query: str, navigation_context: Optional[Dict
     # Create a contextualized navigation prompt
     context = "You are navigating and need to provide clear, concise directions. "
 
-    context += f"Current location: {navigation_context['current_location']}. "
-    context += f"Destination: {navigation_context['destination']}. "
-    context += f"Next turn: {navigation_context['next_turn']}. "
-    context += f"Distance remaining: {navigation_context['distance_remaining']}. "
+    if navigation_context:
+        context += f"Current location: {navigation_context.get('current_location', 'Unknown')}. "
+        context += f"Destination: {navigation_context.get('destination', 'Unknown')}. "
+        context += f"Next turn: {navigation_context.get('next_turn', 'Unknown')}. "
+        context += f"Distance remaining: {navigation_context.get('distance_remaining', 'Unknown')}. "
 
     context += "\nKeep your response under 15 words, focused on the immediate navigation need."
 
     full_prompt = context + f"\n\nUser asks: {user_query}\nNavigation response:"
-    print(full_prompt)
 
-    return generate_reply(full_prompt, include_context=False)
+    return generate_reply(full_prompt, include_context=False, session_id=session_id)

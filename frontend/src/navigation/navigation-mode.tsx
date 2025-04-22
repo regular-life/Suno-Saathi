@@ -887,13 +887,10 @@ export function NavigationMode() {
         )}
         
         {/* Current direction overlay */}
-        {currentManeuver && (
+        {currentManeuver && nextManeuver && (
           <div className={classes.currentDirectionBox}>
             <div className={classes.currentDirectionText}>
-              {getInstructionText(currentManeuver.html_instructions)}
-            </div>
-            <div className={classes.currentDirectionDistance}>
-              {formatDistance(currentManeuver.distance)}
+              {getInstructionText(nextManeuver.html_instructions)} in {formatDistance(currentManeuver.distance)}
             </div>
           </div>
         )}
@@ -945,7 +942,7 @@ export function NavigationMode() {
                 key={index + 2}
                 className={`${classes.directionStep} ${index + 2 === currentStep ? classes.active : ''}`}
               >
-                <div className={classes.stepNumber}>{index + 3}</div>
+                <div className={classes.stepNumber}>{index + 1}</div>
                 <div
                   className={classes.stepInstruction}
                   dangerouslySetInnerHTML={{ __html: step.html_instructions }}

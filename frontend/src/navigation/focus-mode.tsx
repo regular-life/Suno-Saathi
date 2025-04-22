@@ -38,6 +38,9 @@ const getManeuverIcon = (type: string | null | undefined, shouldPulsate: boolean
   // Use useState to create pulsating effect with size changes
   const [iconSize, setIconSize] = useState(80);
   
+  // Debug logs to understand what's coming in 
+  console.log('getManeuverIcon called with:', { type, distance: distance?.value });
+  
   // Set up pulsation effect using useEffect
   useEffect(() => {
     if (!shouldPulsate && (!distance || distance.value === 0)) return;
@@ -45,9 +48,9 @@ const getManeuverIcon = (type: string | null | undefined, shouldPulsate: boolean
     // Determine pulse speed based on distance
     let interval = 2000; // default slow pulse
     if (distance) {
-      if (distance.value < 50) interval = 500; // very fast when close
-      else if (distance.value < 100) interval = 800; // fast when approaching
-      else if (distance.value < 200) interval = 1200; // medium when nearing
+      if (distance.value < 50) interval = 1500; // very fast when close
+      else if (distance.value < 100) interval = 500; // fast when approaching
+      else if (distance.value < 200) interval = 100; // medium when nearing
     }
     
     // Create pulse effect by changing size
@@ -65,21 +68,29 @@ const getManeuverIcon = (type: string | null | undefined, shouldPulsate: boolean
     return () => clearInterval(pulseTimer);
   }, [shouldPulsate, distance]);
 
-  // Determine which icon to display based on maneuver type
-  if (!type) return <IconArrowUp size={iconSize} color="black" />;
+  // Check if near a turn (less than 400m)
+  const isNearTurn = distance && distance.value <= 400;
   
-  switch (type) {
-    case 'turn-right':
-    case 'turn-slight-right':
-    case 'turn-sharp-right':
-      return <IconArrowRight size={iconSize} color="black" />;
-    case 'turn-left':
-    case 'turn-slight-left':
-    case 'turn-sharp-left':
+  // Log debug info about turn decision
+  console.log('Turn decision:', { isNearTurn, type, distanceValue: distance?.value });
+  
+  // If we have a turn coming up AND we're close to it
+  if (isNearTurn && type) {
+    // Check directly for turn type patterns
+    if (type.includes('left') || type === 'turn-left' || type === 'turn-slight-left' || type === 'turn-sharp-left') {
+      console.log('Showing LEFT arrow');
       return <IconArrowLeft size={iconSize} color="black" />;
-    default:
-      return <IconArrowUp size={iconSize} color="black" />;
+    }
+    
+    if (type.includes('right') || type === 'turn-right' || type === 'turn-slight-right' || type === 'turn-sharp-right') {
+      console.log('Showing RIGHT arrow');
+      return <IconArrowRight size={iconSize} color="black" />;
+    }
   }
+  
+  console.log('Showing default UP arrow');
+  // Default to straight arrow
+  return <IconArrowUp size={iconSize} color="black" />;
 };
 
 // Get smaller icon for next maneuver
@@ -143,6 +154,21 @@ const getInstructionText = (instruction: string) => {
     return "Stay on the same road";
   } else {
     return "Continue";
+  }
+};
+
+// Extract direction type from instruction text for arrow display
+const getDirectionFromInstruction = (instruction: string): string | null => {
+  if (!instruction) return null;
+  
+  const cleanText = instruction.replace(/<[^>]+>/g, '').toLowerCase();
+  
+  if (cleanText.includes("right")) {
+    return "turn-right";
+  } else if (cleanText.includes("left")) {
+    return "turn-left";
+  } else {
+    return null;
   }
 };
 
@@ -219,6 +245,9 @@ export function FocusMode({ onExit, onBack, onSwitchToMap }: FocusModeProps) {
   
   const currentManeuver = currentRoute.legs[0]?.steps[currentStep] || null;
   const nextManeuver = currentRoute.legs[0]?.steps[currentStep + 1] || null;
+  
+  // Debug log to check currentManeuver structure
+  console.log("Current maneuver:", JSON.stringify(currentManeuver, null, 2));
   
   // Pulsation is controlled by distance (updated)
   const shouldPulsateIcon = currentManeuver && (getIconPulsationRate(currentManeuver.distance) !== null);
@@ -369,22 +398,20 @@ export function FocusMode({ onExit, onBack, onSwitchToMap }: FocusModeProps) {
           textAlign: 'center'
         }}
       >
-        {currentManeuver && (
+        {currentManeuver && nextManeuver && (
           <>
             <Text style={{ fontSize: '24px', marginBottom: '20px', color: 'black' }}>
-              {currentManeuver.html_instructions.includes("Stay") ? 
-                "Stay on the same road" : 
-                getInstructionText(currentManeuver.html_instructions)
-              }
+              {getInstructionText(nextManeuver.html_instructions)} in {formatDistance(currentManeuver.distance)}
             </Text>
-            
+            <div style={{ margin: '30px 0', height: '90px', width: '90px' }}>
             <Box
               style={{
                 margin: '30px 0'
               }}
             >
-              {getManeuverIcon(currentManeuver.maneuver, false, currentManeuver.distance)}
+              {getManeuverIcon(nextManeuver.maneuver || getDirectionFromInstruction(nextManeuver.html_instructions), false, currentManeuver.distance)}
             </Box>
+            </div>
             
             <Text 
               style={{ 
@@ -426,7 +453,7 @@ export function FocusMode({ onExit, onBack, onSwitchToMap }: FocusModeProps) {
             
             <div className={classes.nextManeuverText}>
               {getInstructionText(nextManeuver.html_instructions)}
-            </div>
+              </div>
             
             <div className={classes.nextManeuverDistance}>
               {formatDistance(nextManeuver.distance)}
@@ -441,10 +468,10 @@ export function FocusMode({ onExit, onBack, onSwitchToMap }: FocusModeProps) {
         {/* All directions (visible when expanded) */}
         {showAllDirections && (
           <div className={classes.directionsList}>
-            {currentRoute && currentRoute.legs && currentRoute.legs[0]?.steps.map((step, index) => (
+            {currentRoute && currentRoute.legs && currentRoute.legs[0]?.steps.slice(2).map((step, index) => (
               <div
-                key={index}
-                className={`${classes.directionStep} ${index === currentStep ? classes.active : ''}`}
+                key={index + 2}
+                className={`${classes.directionStep} ${index + 2 === currentStep ? classes.active : ''}`}
               >
                 <div className={classes.stepNumber}>{index + 1}</div>
                 <div
@@ -460,7 +487,7 @@ export function FocusMode({ onExit, onBack, onSwitchToMap }: FocusModeProps) {
         {/* Control buttons */}
         <div className={classes.controls}>
           <button 
-            className={classes.mapModeButton}
+            className={classes.focusModeButton}
             onClick={onSwitchToMap}
             title="Switch to Map Mode"
           >
@@ -474,7 +501,7 @@ export function FocusMode({ onExit, onBack, onSwitchToMap }: FocusModeProps) {
             <IconMicrophone size={24} />
           </button>
         </div>
-        
+
         {/* Hint text */}
         <div className={classes.hintText}>
           Say "Hey Saarthi" to activate voice assistant

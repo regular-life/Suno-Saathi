@@ -2,6 +2,7 @@ import re
 import uuid
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
+import json
 
 from core.llm import LLMGemini
 
@@ -147,6 +148,8 @@ class Session:
         # Add all previous messages in the conversation
         for message in self.messages:
             if message.role == "user":
+                # For user messages, preserve any context structure that might be present
+                # This ensures context blocks like "Current context:" are preserved
                 formatted += f"User: {message.content}\n"
             else:
                 formatted += f"Saarthi: {message.content}\n"
@@ -282,42 +285,46 @@ def generate_reply(prompt: str, include_context: bool = True, session_id: Option
     return llm.chat(full_prompt)
 
 
-def process_navigation_prompt(
-    user_query: str, navigation_context: Optional[Dict] = None, session_id: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Process a navigation-related prompt with specific context
-
-    Args:
-        user_query: The user's navigation question
-        navigation_context: Optional dict with current route, location, etc.
-        session_id: Optional session ID to include chat history
-
-    Returns:
-        Dict with response formatted for navigation
-    """
-    # Create a contextualized navigation prompt
-    context = "You are navigating and need to provide clear, concise directions. "
-
-    if navigation_context:
-        context += f"Current location: {navigation_context.get('current_location', 'Unknown')}. "
-        context += f"Destination: {navigation_context.get('destination', 'Unknown')}. "
-        context += f"Next turn: {navigation_context.get('next_turn', 'Unknown')}. "
-        context += f"Distance remaining: {navigation_context.get('distance_remaining', 'Unknown')}. "
-
-    # Include route info
-    route_info = navigation_context.get("route_info", [])
-    if route_info:
-        context += (
-            "Route details: "
-            + ", ".join(
-                [f"{step['instruction']} ({step['distance']['text']})" for leg in route_info for step in leg["steps"]]
-            )
-            + ". "
-        )
-
-    context += "\nKeep your response under 15 words, focused on the immediate navigation need."
-
-    full_prompt = context + f"\n\nUser asks: {user_query}\nNavigation response:"
-
-    return generate_reply(full_prompt, include_context=False, session_id=session_id)
+def process_navigation_prompt(query: str, navigation_context: Dict[str, Any], session_id: str = None) -> str:
+    """Process the navigation prompt with the user query"""
+    # Get session or create new one
+    session = session_manager.get_session(session_id) if session_id else session_manager.create_session()
+    
+    # Format all context parameters into a readable string
+    context_info = "Current context:\n"
+    
+    # Process each context parameter
+    for key, value in navigation_context.items():
+        # Skip session_id as it's handled separately
+        if key == "session_id":
+            continue
+        
+        # Special handling for complex objects like route_info
+        if key == "route_info" and value and isinstance(value, (dict, list)):
+            try:
+                # Limit the length of the JSON representation
+                route_json = json.dumps(value)
+                if len(route_json) > 500:
+                    route_json = route_json[:500] + "... (truncated)"
+                context_info += f"- Route Information: {route_json}\n"
+            except:
+                context_info += f"- Route Information: [Complex route data]\n"
+        else:
+            # Format regular key-value pairs
+            if value is not None and value != "":
+                context_info += f"- {key.replace('_', ' ').title()}: {value}\n"
+    
+    # Add the context and user query to the session
+    full_query = f"{context_info}\n\nUser Query: {query}"
+    session.add_message("user", full_query)
+    
+    # Get the formatted history with system prompt and all messages
+    prompt = session.get_formatted_history()
+    
+    # Process with LLM
+    response = generate_reply(prompt, include_context=False, session_id=session_id)
+    
+    # Add the assistant's response to the session
+    session.add_message("assistant", response)
+    
+    return clean_llm_response(response)

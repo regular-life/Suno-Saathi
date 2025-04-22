@@ -274,65 +274,52 @@ async def process_llm_query(request: LLMQueryRequest):
     try:
         # Get or create the session ID
         session_id = None
-        context = None
+        context_dict = {}
 
         # Check if the context is a string (possibly a session ID)
         if request.context and isinstance(request.context, str):
             session_id = request.context
-        # Otherwise, it might be a dictionary with navigation context
+        # Otherwise, it might be a dictionary with context
         elif request.context and isinstance(request.context, dict):
-            context = request.context
-            if "session_id" in context:
-                session_id = context.pop("session_id")
+            context_dict = request.context
+            if "session_id" in context_dict:
+                session_id = context_dict.get("session_id")
 
         if not session_id:
             session_id = str(uuid.uuid4())
 
-        navigation_context = {}
+        # Get existing session or create a new one
+        session = session_manager.get_session(session_id)
+        if not session:
+            session_id = session_manager.create_session(session_id)
+            session = session_manager.get_session(session_id)
 
-        if context and "context" in context and context["context"] == "navigation":
+        # Prepare a context prompt with all available information
+        context_prompt = ""
+        
+        # Add all context parameters to the prompt
+        if context_dict:
+            context_prompt += "Current context:\n"
+            for key, value in context_dict.items():
+                if key != "session_id":
+                    # Format route_info specially if it exists and is complex
+                    if key == "route_info" and isinstance(value, (list, dict)):
+                        context_prompt += f"- {key}: " + json.dumps(value, ensure_ascii=False)[:500] + "\n"
+                    else:
+                        context_prompt += f"- {key}: {value}\n"
 
-            # Extract navigation data from context
-            navigation_context = {
-                "current_location": context.get("current_location"),
-                "destination": context.get("destination"),
-                "next_turn": context.get("next_turn"),
-                "distance_remaining": context.get("distance_remaining"),
-                "time_remaining": context.get("time_remaining"),
-            }
+        # Add the user query with context
+        full_query = f"{context_prompt}\nUser query: {request.query}"
+        
+        # Add message to session and get response
+        response = session_manager.get_response(session_id, full_query)
 
-            # Add all future directions if available
-            if "future_directions" in context:
-                navigation_context["future_directions"] = context["future_directions"]
-            elif "route" in context and "legs" in context["route"] and len(context["route"]["legs"]) > 0:
-                # Extract directions from route object
-                steps = context["route"]["legs"][0].get("steps", [])
-                future_directions = []
-
-                for i, step in enumerate(steps):
-                    direction = {
-                        "instruction": step.get("html_instructions", ""),
-                        "distance": step.get("distance", {}).get("text", ""),
-                        "maneuver": step.get("maneuver"),
-                    }
-                    future_directions.append(direction)
-
-                navigation_context["future_directions"] = future_directions
-
-        # Use the specialized navigation prompt processor from llm_interface
-        from modules.llm_interface import process_navigation_prompt
-
-        response = process_navigation_prompt(
-            request.query, navigation_context=navigation_context, session_id=session_id
-        )
-
-        # Extract response text and double-check that it's clean
+        # Extract response text and ensure it's clean
         if response and response.get("status") == "success":
             clean_response = response.get("response", "")
 
             # Apply a secondary cleaning if needed to ensure no debugging text remains
             from modules.llm_interface import clean_llm_response
-
             clean_response = clean_llm_response(clean_response)
 
             return LLMQueryResponse(

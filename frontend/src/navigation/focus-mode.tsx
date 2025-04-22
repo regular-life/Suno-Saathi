@@ -90,7 +90,7 @@ const getManeuverIcon = (type: string | null | undefined, shouldPulsate: boolean
   
   console.log('Showing default UP arrow');
   // Default to straight arrow
-  return <IconArrowUp size={iconSize} color="black" />;
+      return <IconArrowUp size={iconSize} color="black" />;
 };
 
 // Get smaller icon for next maneuver
@@ -453,7 +453,7 @@ export function FocusMode({ onExit, onBack, onSwitchToMap }: FocusModeProps) {
             
             <div className={classes.nextManeuverText}>
               {getInstructionText(nextManeuver.html_instructions)}
-              </div>
+            </div>
             
             <div className={classes.nextManeuverDistance}>
               {formatDistance(nextManeuver.distance)}
@@ -501,7 +501,7 @@ export function FocusMode({ onExit, onBack, onSwitchToMap }: FocusModeProps) {
             <IconMicrophone size={24} />
           </button>
         </div>
-
+        
         {/* Hint text */}
         <div className={classes.hintText}>
           Say "Hey Saarthi" to activate voice assistant

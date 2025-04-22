@@ -16,6 +16,10 @@ export function VoiceModal({ opened, onClose }: VoiceModalProps) {
     origin,
     destination,
     isNavigating,
+    currentRoute,
+    currentStep,
+    distanceRemaining,
+    timeRemaining,
   } = useNavigationStore();
 
   // ---- speech‑to‑text ---------------------------------------------------
@@ -82,12 +86,16 @@ export function VoiceModal({ opened, onClose }: VoiceModalProps) {
 
     return {
       session_id: sessionId,
+      navigation_status: isNavigating ? 'active' : 'inactive',
+      current_step: currentStep,
       origin: origin || 'not set',
       destination: destination || 'not set',
-      is_navigating: isNavigating,
-      current_location: loc,
+      distance_remaining: distanceRemaining,
+      time_remaining: timeRemaining,
       current_time: new Date().toLocaleTimeString(),
       current_date: new Date().toLocaleDateString(),
+      current_location: loc,
+      route_info: currentRoute,
     };
   };
 

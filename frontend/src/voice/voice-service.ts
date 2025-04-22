@@ -33,6 +33,7 @@ interface LLMResponse {
   action?: string;
   params?: any;
   sessionId?: string;
+  status?: string;
 }
 
 // Voice service state
@@ -41,6 +42,7 @@ interface VoiceServiceState {
   isSpeaking: boolean;
   isMuted: boolean;
   isWakeWordListening: boolean;
+  isProcessing: boolean;
   currentSessionId?: string;
 }
 
@@ -58,10 +60,12 @@ class VoiceService {
     isListening: false,
     isSpeaking: false,
     isMuted: false,
-    isWakeWordListening: false
+    isWakeWordListening: false,
+    isProcessing: false
   };
 
   private onWakeWordCallback: (() => void) | null = null;
+  private statusUpdateCallback: ((status: string) => void) | null = null;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -175,19 +179,45 @@ class VoiceService {
     this.wakeWordRecognition.lang = 'en-US';
 
     // Set up wake word detection handler
-    this.wakeWordRecognition.onresult = (event: any) => {
+    this.wakeWordRecognition.onresult = async (event: any) => {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript.trim().toLowerCase();
         
-        const similarity = this.stringSimilarity(WAKE_WORD, transcript);
-        if (similarity >= WAKE_WORD_THRESHOLD) {
-          console.log('Wake word detected with similarity:', similarity);
+        // Debug output - show what's being heard
+        console.log('[Wake Word Debug] Heard:', transcript);
+        this.updateStatus(`Heard: ${transcript}`);
+        
+        // Check if we should use backend for wake word detection
+        try {
+          const wakeWordDetected = await this.detectWakeWordWithBackend(transcript);
           
-          this.stopWakeWordDetection();
-          this.playSound(WAKE_SOUND_PATH);
-      
-          if (this.onWakeWordCallback) {
-            this.onWakeWordCallback();
+          if (wakeWordDetected) {
+            console.log('Wake word detected via backend API');
+            
+            this.stopWakeWordDetection();
+            this.playSound(WAKE_SOUND_PATH);
+        
+            if (this.onWakeWordCallback) {
+              this.onWakeWordCallback();
+            }
+            
+            return;
+          }
+        } catch (error) {
+          console.warn('Error with backend wake word detection, falling back to local detection', error);
+          
+          // Fallback to local detection
+          const similarity = this.stringSimilarity(WAKE_WORD, transcript);
+          console.log(`[Wake Word Debug] Similarity score: ${similarity}`);
+          if (similarity >= WAKE_WORD_THRESHOLD) {
+            console.log('Wake word detected locally with similarity:', similarity);
+            
+            this.stopWakeWordDetection();
+            this.playSound(WAKE_SOUND_PATH);
+        
+            if (this.onWakeWordCallback) {
+              this.onWakeWordCallback();
+            }
           }
         }
       }
@@ -221,7 +251,9 @@ class VoiceService {
     
     if (error !== 'aborted' && this.state.isWakeWordListening) {
       setTimeout(() => {
-        this.startWakeWordDetection(this.onWakeWordCallback);
+        if (this.onWakeWordCallback) {
+          this.startWakeWordDetection(this.onWakeWordCallback);
+        }
       }, 1000);
     }
   }
@@ -240,11 +272,58 @@ class VoiceService {
   }
 
   /**
+   * Detect wake word using backend API
+   */
+  private async detectWakeWordWithBackend(text: string): Promise<boolean> {
+    try {
+      // Build full backend URL using environment variable
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
+      const url = apiBase.endsWith('/')
+        ? `${apiBase}api/wake/detect`
+        : `${apiBase}/api/wake/detect`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Backend API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      return data.detected === true;
+    } catch (error) {
+      console.error('Error detecting wake word with backend:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Set status update callback
+   */
+  public setStatusUpdateCallback(callback: (status: string) => void): void {
+    this.statusUpdateCallback = callback;
+  }
+
+  /**
+   * Update status if callback is set
+   */
+  private updateStatus(status: string): void {
+    if (this.statusUpdateCallback) {
+      this.statusUpdateCallback(status);
+    }
+  }
+
+  /**
    * Start listening for the wake word
    */
   public startWakeWordDetection(onWakeWord: () => void): boolean {
-    if (!this.wakeWordRecognition) {
+    if (!this.isSpeechRecognitionSupported() || !this.wakeWordRecognition) {
       console.error('Speech recognition not available');
+      this.updateStatus('Speech recognition not supported');
       return false;
     }
 
@@ -254,6 +333,7 @@ class VoiceService {
       this.onWakeWordCallback = onWakeWord;
       this.wakeWordRecognition.start();
       this.state.isWakeWordListening = true;
+      this.updateStatus('Listening for wake word...');
       return true;
     } catch (error) {
       console.error('Error starting wake word detection:', error);
@@ -272,6 +352,106 @@ class VoiceService {
       this.state.isWakeWordListening = false;
     } catch (error) {
       console.error('Error stopping wake word detection:', error);
+    }
+  }
+
+  /**
+   * Process full voice interaction - from activation to response
+   * This is the main entry point for the voice interaction flow
+   */
+  public async processVoiceInteraction(): Promise<boolean> {
+    try {
+      // Initialize recognition systems
+      if (!this.recognition) {
+        this.initSpeechRecognition();
+      }
+      if (!this.wakeWordRecognition) {
+        this.initWakeWordRecognition();
+      }
+
+      // Request microphone access permission first (to prompt browser)
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        try {
+          await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (err) {
+          console.error('Microphone permission denied', err);
+          this.updateStatus('Microphone permission is required');
+          return false;
+        }
+      }
+
+      // Check if speech recognition is supported
+      if (!this.isSpeechRecognitionSupported() || !this.wakeWordRecognition) {
+        this.updateStatus('Speech recognition not supported in this browser');
+        return false;
+      }
+
+      // Step 1: Start listening for wake word
+      this.updateStatus('Listening for wake word...');
+      
+      // Create a promise that resolves when wake word is detected
+      const wakeWordPromise = new Promise<void>((resolve) => {
+        this.startWakeWordDetection(() => {
+          resolve();
+        });
+      });
+      
+      // Wait until wake word is detected (no timeout)
+      await wakeWordPromise;
+      // Stop wake word detection once detected
+      this.stopWakeWordDetection();
+      
+      // Step 2: Wake word detected, now listen for command (5s silence timeout)
+      this.updateStatus('Listening for command...');
+      const command = await this.listenWithSilenceTimeout(5000);
+      
+      // Step 3: Process command with LLM
+      this.updateStatus('Processing your request...');
+      this.state.isProcessing = true;
+      
+      // Get current location for context if available
+      let currentLocation = null;
+      try {
+        if (navigator.geolocation) {
+          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+          });
+          currentLocation = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+          };
+        }
+      } catch (error) {
+        console.warn('Could not get geolocation:', error);
+      }
+      
+      // Process with LLM including context
+      const llmResponse = await this.processWithLLM(command, {
+        current_location: currentLocation,
+        current_time: new Date().toLocaleTimeString(),
+        current_date: new Date().toLocaleDateString()
+      });
+      
+      this.state.isProcessing = false;
+      
+      // Step 4: Speak the response
+      if (llmResponse && llmResponse.response) {
+        this.updateStatus('Speaking response...');
+        await new Promise<void>((resolve) => {
+          this.speak(llmResponse.response, resolve);
+        });
+        this.updateStatus('Idle');
+        return true;
+      } else {
+        this.updateStatus('Error processing request');
+        return false;
+      }
+      
+    } catch (error) {
+      console.error('Error in voice interaction flow:', error);
+      this.state.isProcessing = false;
+      this.updateStatus('Error processing voice interaction');
+      return false;
     }
   }
 
@@ -332,6 +512,9 @@ class VoiceService {
       // Set up temporary event handlers for this recognition session
       this.recognition.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript.trim();
+        // Debug output - show command heard
+        console.log('[Command Debug] Heard:', transcript);
+        this.updateStatus(`Command: ${transcript}`);
         resolve(transcript);
       };
 
@@ -405,12 +588,14 @@ class VoiceService {
         response: data.response || 'Sorry, I could not process your request.',
         action: data.action,
         params: data.params,
-        sessionId: data.metadata?.session_id
+        sessionId: data.metadata?.session_id,
+        status: data.status
       };
     } catch (error) {
       console.error('Error processing with LLM:', error);
       return {
-        response: 'Sorry, there was an error connecting to the AI assistant.'
+        response: 'Sorry, there was an error connecting to the AI assistant.',
+        status: 'error'
       };
     }
   }
@@ -499,7 +684,55 @@ class VoiceService {
   public resetConversation(): void {
     this.state.currentSessionId = undefined;
   }
+
+  /**
+   * Listen for a voice command until silence timeout then return transcript
+   */
+  private listenWithSilenceTimeout(timeoutMs: number = 5000): Promise<string> {
+    return new Promise((resolve) => {
+      if (!this.recognition) {
+        this.initSpeechRecognition();
+      }
+      const recognition = this.recognition!;
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      let transcript = '';
+      let silenceTimer: number;
+
+      const clearHandlers = () => {
+        clearTimeout(silenceTimer);
+        recognition.onresult = null!;
+        recognition.onerror = null!;
+        recognition.onend = null!;
+      };
+
+      recognition.onresult = (event: any) => {
+        transcript = event.results[0][0].transcript.trim();
+        clearHandlers();
+        resolve(transcript);
+      };
+
+      recognition.onerror = (_event: any) => {
+        clearHandlers();
+        resolve(transcript);
+      };
+
+      recognition.onend = () => {
+        clearHandlers();
+        resolve(transcript);
+      };
+
+      // Stop listening after timeoutMs of silence
+      silenceTimer = window.setTimeout(() => {
+        recognition.stop();
+      }, timeoutMs);
+
+      recognition.start();
+      this.state.isListening = true;
+    });
+  }
 }
 
-// Create singleton instance
+// Create and export a singleton instance
 export const voiceService = new VoiceService(); 

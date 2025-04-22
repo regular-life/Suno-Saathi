@@ -142,6 +142,7 @@ export function NavigationMode() {
   const simulationStepRef = useRef(0);
   const lastPositionRef = useRef<google.maps.LatLng | null>(null);
   const lastHeadingRef = useRef<number>(0);
+  const [voiceStatus, setVoiceStatus] = useState<string>('');
   
   const { 
     isNavigating, 
@@ -343,31 +344,43 @@ export function NavigationMode() {
   };
 
   // Start voice input
-  const startVoiceInput = () => {
+  const startVoiceInput = async () => {
     if (isListening) {
+      // If already listening, stop
       voiceService.stopListening();
+      voiceService.stopWakeWordDetection();
       setIsListening(false);
+      setStatusMessage(null);
       return;
     }
-
-    setIsListening(true);
     
-    voiceService.startListening().then(transcript => {
-      console.log('Voice input:', transcript);
+    // Request microphone access permission
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (error) {
+      console.error('Microphone permission denied', error);
+      setStatusMessage('Microphone permission is required');
+      return;
+    }
+    
+    // Start the complete voice interaction flow
+    setIsListening(true);
+    setStatusMessage('Listening for "Hey Saarthi"...');
+    
+    try {
+      const success = await voiceService.processVoiceInteraction();
       
-        // Process voice commands
-      if (transcript.toLowerCase().includes('exit') || transcript.toLowerCase().includes('stop')) {
-          endNavigation();
-      } else if (transcript.toLowerCase().includes('next')) {
-          incrementStep();
-      } else if (transcript.toLowerCase().includes('focus mode') || transcript.toLowerCase().includes('focus')) {
-        switchToFocusMode();
-        }
+      if (!success) {
+        setStatusMessage('Could not process voice command');
+        setTimeout(() => setStatusMessage(null), 3000);
+      }
+    } catch (error) {
+      console.error('Error in voice interaction:', error);
+      setStatusMessage('Voice interaction error');
+      setTimeout(() => setStatusMessage(null), 3000);
+    } finally {
         setIsListening(false);
-    }).catch(error => {
-      console.error('Error processing voice input:', error);
-        setIsListening(false);
-    });
+    }
   };
 
   // Handle touch start event
@@ -806,6 +819,24 @@ export function NavigationMode() {
     }
   };
 
+  // In useEffect after the component is mounted
+  useEffect(() => {
+    // Set up voice status callback
+    voiceService.setStatusUpdateCallback((status: string) => {
+      setVoiceStatus(status);
+      if (status === 'Listening for wake word...') {
+        setIsListening(true);
+      } else if (status === 'Idle' || status.includes('Error') || status.includes('timed out')) {
+        setIsListening(false);
+      }
+    });
+
+    return () => {
+      // Clear the callback on unmount
+      voiceService.setStatusUpdateCallback((_status: string) => {});
+    };
+  }, []);
+
   // Check if we should render this component
   if (!isNavigating || !currentRoute) {
     return null;
@@ -849,62 +880,21 @@ export function NavigationMode() {
         <MapContainer onMapLoaded={handleMapLoaded} hideSearch={true} />
         
         {/* Status message overlay (when active) */}
-        {statusMessage && (
+        {(statusMessage || voiceStatus) && (
           <div className={classes.statusMessage}>
-            {statusMessage}
+            {statusMessage || voiceStatus}
           </div>
         )}
         
-        {/* Simulation controls */}
-        {isNavigating && (
-          <div className={classes.simulationControls}>
-            <button 
-              className={`${classes.simulationButton} ${isSimulating ? classes.active : ''}`}
-              onClick={toggleSimulation}
-              title={isSimulating ? "Exit Simulation Mode" : "Enter Simulation Mode"}
-            >
-              SIM {isSimulating ? "ON" : "OFF"}
-            </button>
-            
-            {isSimulating && (
-              <>
-                <button
-                  className={classes.simulationButton}
-                  onClick={moveForward}
-                  title="Move Forward"
-                >
-                  <IconArrowNarrowUp size={20} />
-                </button>
-                <button
-                  className={classes.simulationButton}
-                  onClick={turnLeft}
-                  title="Turn Left"
-                >
-                  <IconArrowNarrowLeft size={20} />
-                </button>
-                <button
-                  className={classes.simulationButton}
-                  onClick={turnRight}
-                  title="Turn Right"
-                >
-                  <IconArrowNarrowRight size={20} />
-                </button>
-                <button
-                  className={classes.simulationButton}
-                  onClick={togglePause}
-                  title={isPaused ? "Resume Simulation" : "Pause Simulation"}
-                >
-                  {isPaused ? <IconPlayerPlay size={20} /> : <IconPlayerPause size={20} />}
-                </button>
-                <button
-                  className={classes.simulationButton}
-                  onClick={changeSimulationSpeed}
-                  title="Change Simulation Speed"
-                >
-                  {simulationSpeed}x
-                </button>
-              </>
-            )}
+        {/* Current direction overlay */}
+        {currentManeuver && (
+          <div className={classes.currentDirectionBox}>
+            <div className={classes.currentDirectionText}>
+              {getInstructionText(currentManeuver.html_instructions)}
+            </div>
+            <div className={classes.currentDirectionDistance}>
+              {formatDistance(currentManeuver.distance)}
+            </div>
           </div>
         )}
       </div>
@@ -950,12 +940,12 @@ export function NavigationMode() {
         {/* All directions (visible when expanded) */}
         {showAllDirections && (
           <div className={classes.directionsList}>
-            {currentRoute && currentRoute.legs && currentRoute.legs[0]?.steps.map((step, index) => (
+            {currentRoute && currentRoute.legs && currentRoute.legs[0]?.steps.slice(2).map((step, index) => (
               <div
-                key={index}
-                className={`${classes.directionStep} ${index === currentStep ? classes.active : ''}`}
+                key={index + 2}
+                className={`${classes.directionStep} ${index + 2 === currentStep ? classes.active : ''}`}
               >
-                <div className={classes.stepNumber}>{index + 1}</div>
+                <div className={classes.stepNumber}>{index + 3}</div>
                 <div
                   className={classes.stepInstruction}
                   dangerouslySetInnerHTML={{ __html: step.html_instructions }}

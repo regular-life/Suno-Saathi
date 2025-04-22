@@ -3,13 +3,13 @@ from typing import Any, Dict, List, Optional, Tuple
 import speech_recognition as sr
 
 # Define wake words list - could be moved to a config file later
-WAKE_WORDS = ["suno saarthi", "suno sarathi", "hello saarthi"]
+WAKE_WORDS = ["suno sathi", "he saarthi", "hello sarathi"]
 
 
 class WakeWordDetector:
     def __init__(
         self,
-        energy_threshold=300,
+        energy_threshold=800,
         pause_threshold=0.8,
         wake_words: Optional[List[str]] = None,
     ):

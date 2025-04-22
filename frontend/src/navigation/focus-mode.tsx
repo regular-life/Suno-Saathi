@@ -160,6 +160,7 @@ export function FocusMode({ onExit, onBack, onSwitchToMap }: FocusModeProps) {
   const statusTimeoutRef = useRef<number | null>(null);
   const footerRef = useRef<HTMLDivElement>(null);
   const touchStartY = useRef<number | null>(null);
+  const [voiceStatus, setVoiceStatus] = useState<string>('');
   
   const { 
     isNavigating, 
@@ -175,15 +176,19 @@ export function FocusMode({ onExit, onBack, onSwitchToMap }: FocusModeProps) {
   
   // Initialize wake word detection on mount
   useEffect(() => {
-    // Start wake word detection
-    voiceService.startWakeWordDetection(() => {
-      showTemporaryStatus("I'm listening...");
-      handleVoiceCommand();
+    // Set up voice status callback
+    voiceService.setStatusUpdateCallback((status) => {
+      setVoiceStatus(status);
+      if (status === 'Listening for wake word...') {
+        setIsListening(true);
+      } else if (status === 'Idle' || status.includes('Error') || status.includes('timed out')) {
+        setIsListening(false);
+      }
     });
     
-    // Cleanup on unmount
     return () => {
-      voiceService.stopWakeWordDetection();
+      // Clear the callback on unmount
+      voiceService.setStatusUpdateCallback((_status: string) => {});
       clearStatusTimeout();
     };
   }, []);
@@ -229,94 +234,32 @@ export function FocusMode({ onExit, onBack, onSwitchToMap }: FocusModeProps) {
     showTemporaryStatus(muted ? "Voice muted" : "Voice unmuted");
   };
   
-  // Process voice command using the streamlined voice service
-  const handleVoiceCommand = async () => {
+  // Handle voice button click
+  const handleVoiceButtonClick = async () => {
+    if (isListening) {
+      // If already listening, stop
+      voiceService.stopListening();
+      voiceService.stopWakeWordDetection();
+      setIsListening(false);
+      showTemporaryStatus("Voice assistant stopped");
+      return;
+    }
+
+    // Start the complete voice interaction flow
     setIsListening(true);
+    showTemporaryStatus('Listening for "Hey Saarthi"...');
     
     try {
-      // Get current location and navigation context
-      let currentLocation = null;
-      try {
-        if (navigator.geolocation) {
-          const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject);
-          });
-          currentLocation = {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude
-          };
-        }
-      } catch (error) {
-        console.warn('Could not get geolocation:', error);
-      }
+      const success = await voiceService.processVoiceInteraction();
 
-      // Create context object with navigation state
-      const contextData = {
-        is_navigating: isNavigating,
-        origin: currentRoute?.legs[0]?.start_address || 'unknown',
-        destination: currentRoute?.legs[0]?.end_address || 'unknown',
-        current_step: currentStep,
-        total_steps: currentRoute?.legs[0]?.steps.length || 0,
-        current_instruction: currentRoute?.legs[0]?.steps[currentStep]?.html_instructions || '',
-        distance_remaining: distanceRemaining,
-        time_remaining: timeRemaining,
-        current_location: currentLocation,
-        current_time: new Date().toLocaleTimeString(),
-        current_date: new Date().toLocaleDateString()
-      };
-
-      // Listen for command
-      const transcript = await voiceService.startListening();
-
-      // Process with backend LLM
-      const response = await fetch('/api/llm/query', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          query: transcript,
-          context: contextData
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to get LLM response');
-      }
-
-      const data = await response.json();
-
-      // Speak the response
-      voiceService.speak(data.response);
-      showTemporaryStatus(data.response, 5000);
-
-      // Handle navigation actions from LLM response
-      if (data.action === 'exit-navigation') {
-        showTemporaryStatus("Exiting navigation...");
-        setTimeout(() => {
-          onExit();
-        }, 1000);
-      } else if (data.action === 'next-step') {
-        showTemporaryStatus("Going to next step");
-        incrementStep();
+      if (!success) {
+        showTemporaryStatus('Could not process voice command');
       }
     } catch (error) {
-      console.error('Error processing voice command:', error);
-      showTemporaryStatus("Sorry, I couldn't process that request");
-      voiceService.speak("Sorry, I couldn't process that request");
+      console.error('Error in voice interaction:', error);
+      showTemporaryStatus('Voice interaction error');
     } finally {
       setIsListening(false);
-    }
-  };
-  
-  // Handle manual microphone button click
-  const handleVoiceButtonClick = () => {
-    if (isListening) {
-      voiceService.stopListening();
-      setIsListening(false);
-      showTemporaryStatus("Listening cancelled");
-    } else {
-      handleVoiceCommand();
     }
   };
   
@@ -538,33 +481,12 @@ export function FocusMode({ onExit, onBack, onSwitchToMap }: FocusModeProps) {
         </div>
       </div>
       
-      {/* Status message overlay (when active) */}
-      <Transition
-        mounted={!!statusMessage}
-        transition="fade"
-        duration={200}
-      >
-        {(styles) => (
-          <Box
-            style={{
-              ...styles,
-              position: 'absolute',
-              left: '50%',
-              bottom: '90px',
-              transform: 'translateX(-50%)',
-              padding: '10px 20px',
-              background: 'rgba(255, 255, 255, 0.9)',
-              borderRadius: '20px',
-              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.2)',
-              zIndex: 1001
-            }}
-          >
-            <Text style={{ fontSize: '14px', textAlign: 'center', color: 'black' }}>
-              {statusMessage}
-            </Text>
-          </Box>
+      {/* Status message overlay */}
+      {(statusMessage || voiceStatus) && (
+        <div className={classes.statusMessage}>
+          {statusMessage || voiceStatus}
+        </div>
         )}
-      </Transition>
     </Box>
   );
 }

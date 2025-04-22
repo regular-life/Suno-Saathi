@@ -1,6 +1,10 @@
 import json
 from typing import Optional
 import uuid
+from collections import deque
+import asyncio
+from fastapi.responses import StreamingResponse
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -30,6 +34,18 @@ router = APIRouter(prefix="/api")
 # Initialize navigation handler
 navigation = NavigationHandler()
 
+# Debug logs for wake word detection (keep track of recent logs)
+voice_debug_logs = deque(maxlen=100)  # Store last 100 log entries
+
+def add_voice_debug_log(message: str, log_type: str = "info"):
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+    log_entry = {
+        "timestamp": timestamp,
+        "message": message,
+        "type": log_type
+    }
+    voice_debug_logs.append(log_entry)
+    print(f"[VOICE DEBUG] {timestamp} - {message}")
 
 # Navigation API routes - consolidated endpoints (supporting both GET and POST)
 @router.get("/navigation/directions", response_model=DirectionsResponse)
@@ -169,6 +185,9 @@ async def detect_wake_word(request: WakeWordRequest):
         if not request.text:
             raise HTTPException(status_code=400, detail="Text is required")
 
+        # Debug output
+        add_voice_debug_log(f"Received text: '{request.text}'", "wake_word")
+        
         # Primary wake words
         primary_wake_words = ["suno saarthi", "hello saarthi"]
 
@@ -200,16 +219,23 @@ async def detect_wake_word(request: WakeWordRequest):
         elif variant_detected:
             confidence = 0.85
 
+        # Debug output
+        detected = primary_detected or variant_detected
+        wake_word_found = next(
+            (word for word in primary_wake_words + variant_wake_words if word in text_lower),
+            None,
+        )
+        add_voice_debug_log(f"Detected: {detected}, Confidence: {confidence}, Wake word found: {wake_word_found}", 
+                           "wake_word_result")
+        
         return WakeWordResponse(
-            detected=primary_detected or variant_detected,
+            detected=detected,
             confidence=confidence,
             text=request.text,
-            wake_word_found=next(
-                (word for word in primary_wake_words + variant_wake_words if word in text_lower),
-                None,
-            ),
+            wake_word_found=wake_word_found,
         )
     except Exception as e:
+        add_voice_debug_log(f"Error: {str(e)}", "error")
         raise HTTPException(status_code=400, detail=f"Invalid request: {str(e)}")
 
 
@@ -219,6 +245,10 @@ async def process_llm_query(request: LLMQueryRequest):
     if not request.query:
         raise HTTPException(status_code=400, detail="Query is required")
 
+    # Debug output
+    add_voice_debug_log(f"Received query: '{request.query}'", "command")
+    add_voice_debug_log(f"Context: {request.context}", "command_context")
+    
     try:
         # Get or create the session ID
         session_id = None
@@ -273,3 +303,36 @@ async def process_llm_query(request: LLMQueryRequest):
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/debug/voice-logs")
+async def stream_voice_debug_logs():
+    """Stream voice recognition debug logs as server-sent events"""
+    
+    async def event_generator():
+        # First, yield all existing logs
+        for log in list(voice_debug_logs):
+            yield f"data: {json.dumps(log)}\n\n"
+        
+        # Set up a counter to track position in the log queue
+        last_idx = len(voice_debug_logs)
+        
+        # Keep connection open and stream new logs as they arrive
+        while True:
+            if len(voice_debug_logs) > last_idx:
+                # New logs available
+                new_logs = list(voice_debug_logs)[last_idx:]
+                for log in new_logs:
+                    yield f"data: {json.dumps(log)}\n\n"
+                last_idx = len(voice_debug_logs)
+            
+            # Sleep to avoid excessive CPU usage
+            await asyncio.sleep(0.5)
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        }
+    )

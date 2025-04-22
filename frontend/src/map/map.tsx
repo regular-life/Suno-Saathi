@@ -284,6 +284,7 @@ export function MapContainer({ hideSearch = false }: { hideSearch?: boolean }) {
           gestureHandling={'greedy'}
           disableDefaultUI={false}
           mapId={process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID}
+          mapTypeControl={false}
         >
           <MapComponent />
           {selectedPlace && (

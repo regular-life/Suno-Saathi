@@ -9,6 +9,10 @@ const config: NextConfig = {
   sassOptions: {
     includePaths: [path.join(__dirname, "src/styles")],
   },
+  env: {
+    // Base URL for the FastAPI backend
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+  }
 };
 
 const nextConfig = withPWA({

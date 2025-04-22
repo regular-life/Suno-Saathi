@@ -9,8 +9,18 @@ import type { AppProps } from "next/app";
 import Head from "next/head";
 import { useState, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import '../src/styles/globals.css';
+import dynamic from 'next/dynamic';
 
 const queryClient = new QueryClient();
+
+// Dynamically import the debug panel, only loaded in development
+const DebugPanel = dynamic(() => 
+  process.env.NODE_ENV === 'development' 
+    ? import('../src/utils/debug-panel')
+    : Promise.resolve(() => null),
+  { ssr: false }
+);
 
 function App({ Component, pageProps }: AppProps) {
     const [queryClient] = useState(() => new QueryClient());
@@ -32,7 +42,7 @@ function App({ Component, pageProps }: AppProps) {
     }, []);
 
     return (
-        <MantineProvider>
+        <MantineProvider withGlobalStyles withNormalizeCSS>
             <Notifications />
             <Head>
                 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -47,6 +57,7 @@ function App({ Component, pageProps }: AppProps) {
             </Head>
             <QueryClientProvider client={queryClient}>
                 <Component {...pageProps} />
+                {process.env.NODE_ENV === 'development' && <DebugPanel />}
             </QueryClientProvider>
         </MantineProvider>
     );

@@ -192,7 +192,8 @@ async def detect_wake_word(request: WakeWordRequest):
             "hello sathi",
             "hey sathi",
             "hi sathi",
-            "he sathi",  # Spoken-style Hindi-English blend
+            "he sathi",
+            "hai sathi"  # Spoken-style Hindi-English blend
         ]
 
         # Variant spellings and phonetic matches
@@ -322,11 +323,54 @@ async def process_llm_query(request: LLMQueryRequest):
             from modules.llm_interface import clean_llm_response
             clean_response = clean_llm_response(clean_response)
 
-            return LLMQueryResponse(
-                response=clean_response,
-                status="success",
-                metadata={"session_id": response.get("session_id", session_id)},
-            )
+            # Check if response contains destination change trigger phrase
+            if "Okay, changing destination to" in clean_response.lower():
+                # Extract the destination from the response
+                start_idx = clean_response.lower().find("okay, changing destination to") + len("okay, changing destination to")
+                destNew = clean_response[start_idx:].strip()
+                
+                # Get current origin if available in context
+                origin = None
+                if context_dict and "origin" in context_dict:
+                    origin = context_dict.get("origin")
+                elif context_dict and "current_location" in context_dict:
+                    origin = context_dict.get("current_location")
+                
+                # If we have origin and new destination, get new directions
+                if origin and destNew:
+                    try:
+                        # Get new directions
+                        new_directions = navigation.get_directions(origin, destNew, "driving")
+                        
+                        return LLMQueryResponse(
+                            response=f"Okay, changing destination to {destNew}",
+                            status="success",
+                            metadata={
+                                "session_id": response.get("session_id", session_id),
+                                "destination_change": destNew,
+                                "new_directions": new_directions,
+                                "reload_map": True
+                            },
+                        )
+                    except Exception as e:
+                        add_voice_debug_log(f"Error getting directions for new destination: {str(e)}", "error")
+                
+                # Return response with destination change flag even if we couldn't get directions
+                return LLMQueryResponse(
+                    response=f"Okay, changing destination to {destNew}",
+                    status="success",
+                    metadata={
+                        "session_id": response.get("session_id", session_id),
+                        "destination_change": destNew,
+                        "reload_map": True
+                    },
+                )
+            else:
+                return LLMQueryResponse(
+                    response=clean_response,
+                    status="success",
+                    metadata={"session_id": response.get("session_id", session_id)},
+                )
         else:
             return LLMQueryResponse(
                 response="I couldn't process your request at this time.",

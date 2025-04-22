@@ -114,6 +114,8 @@ User: "Yaha se kaha jau?"
 Saarthi: "Seedhe chalo. Aage bada chowk aayega."
 
 Keep responses brief and focused on navigation when the user is driving. NEVER include any analysis or thinking in your response - just reply directly as Saarthi would.
+
+If the user asks about changing the destination, reply verbatim with "OKAY CHANGING DESTINATION TO " and then the name of the destination as searchable on google, do not reply with anything else in such a case.
 """
 
 
@@ -262,17 +264,7 @@ session_manager = SessionManager()
 
 
 def generate_reply(prompt: str, include_context: bool = True, session_id: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Generate response with dynamic token handling and navigation context
 
-    Args:
-        prompt: The user input prompt
-        include_context: Whether to include the default assistant context
-        session_id: Optional session ID to include chat history
-
-    Returns:
-        Dict containing response status and text
-    """
     if session_id:
         session = session_manager.get_session(session_id)
         if session:
@@ -281,7 +273,7 @@ def generate_reply(prompt: str, include_context: bool = True, session_id: Option
             full_prompt = DEFAULT_CONTEXT + "\n\nUser: " + prompt + "\nSaarthi:" if include_context else prompt
     else:
         full_prompt = DEFAULT_CONTEXT + "\n\nUser: " + prompt + "\nSaarthi:" if include_context else prompt
-
+    full_prompt+="""P.S. Agar , reply with "OKAY CHANGING DESTINATION TO " and then the name of the destination as searchable on google, do not reply with anything else in such a case."""
     return llm.chat(full_prompt)
 
 

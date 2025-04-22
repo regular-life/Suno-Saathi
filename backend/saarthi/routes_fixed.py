@@ -1,6 +1,6 @@
 import json
-from typing import Optional
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -42,22 +42,22 @@ async def process_navigation_query(request: NavigationQueryRequest):
         session_id = None
         if request.context and "session_id" in request.context:
             session_id = request.context["session_id"]
-        
+
         # Create navigation-specific context
         nav_context = {}
         if request.context:
             nav_context = {k: v for k, v in request.context.items() if k != "session_id"}
-        
+
         # Generate prompt with context
         context_text = ""
         if nav_context:
             context_text = f"Navigation Context: {json.dumps(nav_context)}\n"
-        
+
         # Use session manager to get response
         if session_id:
             # Use existing session
             response = session_manager.get_response(session_id, f"{context_text}Navigation query: {request.query}")
-            
+
             if response and response.get("status") == "success":
                 return NavigationQueryResponse(
                     query_type="llm_processed",
@@ -117,4 +117,4 @@ async def process_navigation_query(request: NavigationQueryRequest):
         return response_data
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing navigation query: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Error processing navigation query: {str(e)}")

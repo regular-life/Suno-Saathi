@@ -1,16 +1,17 @@
-import pytest
 import time
 from unittest.mock import MagicMock
 
+import pytest
+
 import modules.navigation as nav_module
-from modules.navigation import NavigationHandler
 from core.config import CONFIG
+from modules.navigation import NavigationHandler
 
 
 @pytest.fixture(autouse=True)
 def setup(monkeypatch):
     # Ensure we don’t accidentally hit the real API
-    monkeypatch.setattr(CONFIG.API_KEYS, 'GOOGLE', 'test_key', raising=False)
+    monkeypatch.setattr(CONFIG.API_KEYS, "GOOGLE", "test_key", raising=False)
 
     class DummyClient:
         def __init__(self, key):
@@ -30,22 +31,25 @@ def setup(monkeypatch):
             raise NotImplementedError
 
     # Swap out the real googlemaps.Client
-    monkeypatch.setattr(nav_module.googlemaps, 'Client', DummyClient)
+    monkeypatch.setattr(nav_module.googlemaps, "Client", DummyClient)
 
 
 def test_is_coordinates_with_dict():
     handler = NavigationHandler()
-    assert handler._is_coordinates({'lat': 12.3, 'lng': 45.6})
+    assert handler._is_coordinates({"lat": 12.3, "lng": 45.6})
 
 
-@pytest.mark.parametrize("loc,expected", [
-    ("12.3,45.6", True),
-    ("-90,180", True),
-    ("91,0", False),
-    ("12.3;45.6", False),
-    ("foo,bar", False),
-    (None, False),
-])
+@pytest.mark.parametrize(
+    "loc,expected",
+    [
+        ("12.3,45.6", True),
+        ("-90,180", True),
+        ("91,0", False),
+        ("12.3;45.6", False),
+        ("foo,bar", False),
+        (None, False),
+    ],
+)
 def test_is_coordinates_string(loc, expected):
     handler = NavigationHandler()
     assert handler._is_coordinates(loc) is expected
@@ -221,9 +225,11 @@ def test_find_places_with_location_address_geocode_zero_results(monkeypatch):
     monkeypatch.setattr(handler, "geocode_address", lambda addr: {"status": "ZERO_RESULTS"})
     # should fall back to text search
     called = []
+
     def stub_text(q, language="en"):
         called.append((q, language))
         return {"from_text": True}
+
     monkeypatch.setattr(handler, "_text_search_places", stub_text)
     out = handler.find_places("z", "nowhere")
     assert out == {"from_text": True}
@@ -240,30 +246,29 @@ def test_find_places_exception(monkeypatch):
     assert res["places"] == []
 
 
-@pytest.mark.parametrize("with_val, without_val, expected_level", [
-    (1000, 1200, "light"),    # ratio ~0.83
-    (1200, 1000, "moderate"), # 1.2
-    (1400, 1000, "heavy"),    # 1.4
-    (2000, 1000, "severe"),   # 2.0
-])
+@pytest.mark.parametrize(
+    "with_val, without_val, expected_level",
+    [
+        (1000, 1200, "light"),  # ratio ~0.83
+        (1200, 1000, "moderate"),  # 1.2
+        (1400, 1000, "heavy"),  # 1.4
+        (2000, 1000, "severe"),  # 2.0
+    ],
+)
 def test_get_traffic_info_levels(monkeypatch, with_val, without_val, expected_level):
     handler = NavigationHandler()
 
     # freeze time
-    monkeypatch.setattr(time, 'time', lambda: 1000000)
+    monkeypatch.setattr(time, "time", lambda: 1000000)
     calls = []
 
     def fake_directions(origin, destination, mode, departure_time, **kwargs):
         calls.append(departure_time)
         # first call is with_traffic, second is without_traffic
         if departure_time == 1000000:
-            return [{
-                "legs": [{"duration_in_traffic": {"value": with_val, "text": f"{with_val}s"}}]
-            }]
+            return [{"legs": [{"duration_in_traffic": {"value": with_val, "text": f"{with_val}s"}}]}]
         else:
-            return [{
-                "legs": [{"duration": {"value": without_val, "text": f"{without_val}s"}}]
-            }]
+            return [{"legs": [{"duration": {"value": without_val, "text": f"{without_val}s"}}]}]
 
     handler.client.directions = fake_directions
 

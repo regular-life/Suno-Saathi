@@ -21,7 +21,6 @@ class WakeWordDetector:
         self.active = False
         self.wake_words = wake_words if wake_words is not None else WAKE_WORDS
 
-
         def listen_for_wake_word(self) -> str:
             """
             Listen from microphone and transcribe speech to text.
@@ -50,7 +49,6 @@ class WakeWordDetector:
             except sr.RequestError as e:
                 print(f"[ERROR] SpeechRecognition Error: {e}")
                 return ""
-
 
     def detect_wake_word(self, text: str) -> bool:
         """

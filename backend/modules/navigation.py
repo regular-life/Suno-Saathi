@@ -281,7 +281,7 @@ class NavigationHandler:
             return "lat" in location and "lng" in location
         if not isinstance(location, str):
             return False
-        
+
         try:
             parts = location.split(",")
             if len(parts) != 2:

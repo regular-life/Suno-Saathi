@@ -1,9 +1,11 @@
 # tests/test_llm_api.py
 import os
-import pytest
+
 import google.generativeai as genai
+import pytest
 
 from core.config import CONFIG
+
 
 @pytest.mark.integration
 def test_gemini_api_integration():
@@ -13,7 +15,7 @@ def test_gemini_api_integration():
     """
     # 1) Grab your real key (env var overrides CONFIG if you like)
     api_key = os.getenv("GEMINI_API_KEY") or CONFIG.API_KEYS.GEMINI
-    if not api_key or api_key == "": 
+    if not api_key or api_key == "":
         pytest.skip("No Gemini API key configured; skipping integration test")
 
     # 2) Configure the library for real
@@ -27,8 +29,7 @@ def test_gemini_api_integration():
         top_k=1,
         max_output_tokens=10,
     )
-    model = genai.GenerativeModel(model_name=model_name,
-                                  generation_config=generation_config)
+    model = genai.GenerativeModel(model_name=model_name, generation_config=generation_config)
 
     # 4) Ask a trivial prompt
     prompt = "Hello, what's your name?"

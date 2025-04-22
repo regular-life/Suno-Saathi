@@ -206,6 +206,7 @@ async def detect_wake_word(request: WakeWordRequest):
             "he saarthi",
             "he sarathi",
             "he saarti",
+            "he sakshi",
             "sunno sathi",
             "sunno sathi",
             "sonu sathi",
@@ -213,7 +214,7 @@ async def detect_wake_word(request: WakeWordRequest):
             "soonu sathi",
             "suno sati",
             "suno saati",
-            
+            "suno sakshi",
             # Prefix variations
             "ok sathi",
             "okay sathi",
@@ -291,21 +292,63 @@ async def process_llm_query(request: LLMQueryRequest):
         if not session_id:
             session_id = str(uuid.uuid4())
         
-        # Create custom prompt if we have context
-        custom_prompt = None
-        if context:
-            # Format the context for better readability in the prompt
-            context_str = "\n".join([f"{key}: {value}" for key, value in context.items()])
-            custom_prompt = DEFAULT_CONTEXT + f"\n\nNavigation Context:\n{context_str}\n"
+        # Determine if this is a navigation-related query
+        is_navigation = False
+        navigation_context = {}
         
-        # Get response using SessionManager with optional custom prompt
-        if custom_prompt:
-            # Get or create session with custom prompt
-            if not session_manager.get_session(session_id):
-                session_id = session_manager.create_session(session_id, custom_prompt)
+        if context and 'context' in context and context['context'] == 'navigation':
+            is_navigation = True
             
-        # Get response - the SessionManager will already clean the response
-        response = session_manager.get_response(session_id, request.query)
+            # Extract navigation data from context
+            navigation_context = {
+                'current_location': context.get('current_location'),
+                'destination': context.get('destination'),
+                'next_turn': context.get('next_turn'),
+                'distance_remaining': context.get('distance_remaining'),
+                'time_remaining': context.get('time_remaining')
+            }
+            
+            # Add all future directions if available
+            if 'future_directions' in context:
+                navigation_context['future_directions'] = context['future_directions']
+            elif 'route' in context and 'legs' in context['route'] and len(context['route']['legs']) > 0:
+                # Extract directions from route object
+                steps = context['route']['legs'][0].get('steps', [])
+                future_directions = []
+                
+                for i, step in enumerate(steps):
+                    direction = {
+                        'instruction': step.get('html_instructions', ''),
+                        'distance': step.get('distance', {}).get('text', ''),
+                        'maneuver': step.get('maneuver'),
+                    }
+                    future_directions.append(direction)
+                
+                navigation_context['future_directions'] = future_directions
+        
+        # Use the appropriate LLM interface function based on the context
+        if is_navigation:
+            # Use the specialized navigation prompt processor from llm_interface
+            from modules.llm_interface import process_navigation_prompt
+            response = process_navigation_prompt(
+                request.query, 
+                navigation_context=navigation_context,
+                session_id=session_id
+            )
+        else:
+            # Create custom prompt if we have context but it's not navigation
+            custom_prompt = None
+            if context:
+                # Format the context for better readability in the prompt
+                context_str = "\n".join([f"{key}: {value}" for key, value in context.items()])
+                custom_prompt = DEFAULT_CONTEXT + f"\n\nContext:\n{context_str}\n"
+            
+            # Get or create session with custom prompt
+            if custom_prompt and not session_manager.get_session(session_id):
+                session_id = session_manager.create_session(session_id, custom_prompt)
+                
+            # Get response using SessionManager
+            response = session_manager.get_response(session_id, request.query)
         
         # Extract response text and double-check that it's clean
         if response and response.get("status") == "success":
@@ -318,7 +361,7 @@ async def process_llm_query(request: LLMQueryRequest):
             return LLMQueryResponse(
                 response=clean_response,
                 status="success",
-                metadata={"session_id": response.get("session_id")}
+                metadata={"session_id": response.get("session_id", session_id)}
             )
         else:
             return LLMQueryResponse(

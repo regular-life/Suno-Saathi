@@ -145,15 +145,52 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
       return null;
     }
     
+    console.log(`Getting directions: origin=${origin}, destination=${destination}, mode=${travelMode}`);
+    
     try {
-      const response = await useNavigationDirections.apiCall({
-        origin,
-        destination,
-        mode: travelMode
+      // Create the API URL with query parameters
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
+      const apiUrl = new URL(
+        apiBase.endsWith('/') 
+          ? `${apiBase}api/navigation/directions` 
+          : `${apiBase}/api/navigation/directions`
+      );
+      
+      // Add query parameters
+      apiUrl.searchParams.append('origin', origin);
+      apiUrl.searchParams.append('destination', destination);
+      apiUrl.searchParams.append('mode', travelMode);
+      
+      // Log the full URL for debugging
+      console.log('Directions API URL:', apiUrl.toString());
+      
+      // Make the fetch request
+      const response = await fetch(apiUrl.toString(), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
-
-      if (response && response.data && response.data.routes && response.data.routes.length > 0) {
-        const routeData = response.data.routes[0];
+      
+      if (!response.ok) {
+        // Try to get more detailed error information
+        let errorText = '';
+        try {
+          const errorData = await response.text();
+          errorText = errorData;
+          console.error('API Error Response:', errorData);
+        } catch (e) {
+          console.error('Could not parse error response');
+        }
+        
+        throw new Error(`API request failed with status ${response.status}: ${errorText}`);
+      }
+      
+      const data = await response.json();
+      console.log('Directions API response:', data);
+      
+      if (data && data.routes && data.routes.length > 0) {
+        const routeData = data.routes[0];
         
         // Transform the response data to match our Route interface
         const route: Route = {
@@ -193,6 +230,8 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
         
         return route;
       }
+      
+      console.warn('No routes found in the response');
       return null;
     } catch (error) {
       console.error('Error getting directions:', error);

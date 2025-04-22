@@ -4,8 +4,38 @@ import classes from './map.module.scss';
 import { IconSearch } from '@tabler/icons-react';
 import { DEFAULT_CENTER, DEFAULT_ZOOM } from '@/utils/constants';
 import { useNavigationStore } from '@/navigation/navigation-store';
-import { useNavigationPlaces } from '@/navigation/navigation.query';
-import { decode } from '@googlemaps/polyline-codec';
+import { useNavigationPlaces, useNavigationGeocode } from '@/navigation/navigation.query';
+import { voiceService } from '@/voice/voice-service';
+
+// Function to decode Google Maps encoded polyline
+function decode(encoded: string): [number, number][] {
+  const points: [number, number][] = [];
+  let index = 0, lat = 0, lng = 0;
+
+  while (index < encoded.length) {
+    let b, shift = 0, result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lat += dlat;
+
+    shift = 0;
+    result = 0;
+    do {
+      b = encoded.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    const dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+    lng += dlng;
+
+    points.push([lat / 1e5, lng / 1e5]);
+  }
+  return points;
+}
 
 // Map component that handles the actual map instance and route display
 function MapComponent() {
@@ -18,6 +48,7 @@ function MapComponent() {
     setMarkers,
     origin,
     destination,
+    setDestination,
     getDirections,
     currentStep
   } = useNavigationStore();
@@ -175,7 +206,8 @@ export function MapContainer({ hideSearch = false }: { hideSearch?: boolean }) {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<any>(null);
   const [markerRef, marker] = useAdvancedMarkerRef();
-  const { setMarkers, mapInstance } = useNavigationStore();
+  const { setMarkers, mapInstance, origin, destination, setDestination, getDirections, markers } = useNavigationStore();
+  const geocodeApi = useNavigationGeocode.apiCall;
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -234,6 +266,144 @@ export function MapContainer({ hideSearch = false }: { hideSearch?: boolean }) {
       mapInstance.setZoom(15);
     }
   };
+
+  // Handle destination change commands from voice assistant
+  useEffect(() => {
+    voiceService.setChangeDestinationCallback(async (dest: string) => {
+      if (!dest || dest.trim() === '') {
+        console.error('Empty destination received');
+        return;
+      }
+      
+      // Update destination in store
+      setDestination(dest);
+      console.log('Voice command: changing destination to', dest);
+
+      // Create a safer notification that doesn't rely on DOM manipulation
+      const showNotification = () => {
+        if (!mapInstance) return;
+        
+        // Use an overlay div that already exists or create a temporary one
+        let notificationContainer = document.getElementById('map-notifications');
+        if (!notificationContainer) {
+          notificationContainer = document.createElement('div');
+          notificationContainer.id = 'map-notifications';
+          notificationContainer.style.position = 'absolute';
+          notificationContainer.style.top = '20px';
+          notificationContainer.style.left = '50%';
+          notificationContainer.style.transform = 'translateX(-50%)';
+          notificationContainer.style.zIndex = '1000';
+          document.body.appendChild(notificationContainer);
+        }
+        
+        const notification = document.createElement('div');
+        notification.innerText = `Changing destination to ${dest}...`;
+        notification.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        notification.style.color = 'white';
+        notification.style.padding = '10px 20px';
+        notification.style.borderRadius = '4px';
+        notification.style.marginBottom = '10px';
+        notification.style.fontWeight = 'bold';
+        notification.style.textAlign = 'center';
+        
+        notificationContainer.appendChild(notification);
+        
+        // Remove after 5 seconds
+        setTimeout(() => {
+          if (notificationContainer.contains(notification)) {
+            notificationContainer.removeChild(notification);
+          }
+          // Clean up the container if empty
+          if (notificationContainer.childNodes.length === 0) {
+            document.body.removeChild(notificationContainer);
+          }
+        }, 5000);
+      };
+      
+      showNotification();
+      
+      try {
+        // Geocode the new destination
+        const res = await geocodeApi({ address: dest });
+        const data = res.data;
+        
+        if (data.status === 'OK' && data.results.length > 0) {
+          const loc = data.results[0].geometry.location;
+          
+          // Get safe coordinates for the origin
+          let originCoords = { lat: 0, lng: 0 };
+          
+          // Try to get coordinates from markers first
+          const originMarker = markers.find(m => m.label === 'A');
+          if (originMarker) {
+            originCoords = { 
+              lat: originMarker.position.lat, 
+              lng: originMarker.position.lng 
+            };
+          }
+          // Or try to parse from origin string
+          else if (origin && origin.includes(',')) {
+            const [lat, lng] = origin.split(',').map(Number);
+            if (!isNaN(lat) && !isNaN(lng)) {
+              originCoords = { lat, lng };
+            }
+          }
+          // Fallback to map center
+          else if (mapInstance) {
+            const center = mapInstance.getCenter();
+            if (center) {
+              originCoords = {
+                lat: center.lat(),
+                lng: center.lng()
+              };
+            }
+          }
+          
+          // Update markers
+          setMarkers([
+            { 
+              id: 'origin', 
+              position: originCoords, 
+              title: 'Origin', 
+              label: 'A' 
+            },
+            { 
+              id: 'destination', 
+              position: { lat: loc.lat, lng: loc.lng }, 
+              title: dest, 
+              label: 'B', 
+              color: '#e91e63' 
+            }
+          ]);
+          
+          // Format origin string
+          const formattedOrigin = `${originCoords.lat},${originCoords.lng}`;
+          const formattedDestination = `${loc.lat},${loc.lng}`;
+          
+          console.log(`Getting directions from ${formattedOrigin} to ${formattedDestination}`);
+          
+          // Get directions
+          await getDirections({
+            origin: formattedOrigin,
+            destination: formattedDestination
+          });
+          
+          // Fit map to show the route
+          if (mapInstance) {
+            setTimeout(() => {
+              const bounds = new google.maps.LatLngBounds();
+              markers.forEach(marker => bounds.extend(marker.position));
+              mapInstance.fitBounds(bounds, 20);
+            }, 500); // Small delay to ensure markers are updated
+          }
+        } else {
+          console.error('Could not geocode the destination:', dest);
+        }
+      } catch (e) {
+        console.error('Error processing destination change:', e);
+      }
+    });
+  }, [setDestination, setMarkers, origin, getDirections, markers, geocodeApi, mapInstance]);
 
   return (
     <div className={classes.map}>

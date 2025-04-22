@@ -34,6 +34,7 @@ interface LLMResponse {
   params?: any;
   sessionId?: string;
   status?: string;
+  destinationChange?: string;
 }
 
 // Voice service state
@@ -69,6 +70,9 @@ class VoiceService {
 
   // Whether assistant mode is active
   private assistantActive: boolean = false;
+
+  // Callback when LLM instructs a destination change
+  private changeDestinationCallback: ((destination: string) => void) | null = null;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -397,26 +401,51 @@ class VoiceService {
    */
   private async handleCommandCycle(): Promise<void> {
     if (!this.assistantActive) return;
+    
     // Listen for user command after wake word
     this.updateStatus('Listening for command...');
-    const command = await this.listenWithSilenceTimeout(2000);
-    if (!command) {
-      this.updateStatus('No command detected, listening for wake word...');
-      if (this.assistantActive) this.startWakeWordMode();
+    const command = await this.listenWithSilenceTimeout(3000); // Increased timeout for better detection
+    
+    // Validate command
+    if (!command || command.trim().length < 2) {
+      this.updateStatus('No clear command detected.');
+      this.speak("I didn't catch that. Please try again.", () => {
+        if (this.assistantActive) this.startWakeWordMode();
+      });
       return;
     }
+    
     // Process with LLM
     this.updateStatus('Processing your request...');
-    const llmResponse = await this.processWithLLM(command, {});
-    // Speak the response
-    if (llmResponse && llmResponse.response) {
-      this.updateStatus('Speaking response...');
-      await new Promise<void>(resolve => this.speak(llmResponse.response, resolve));
-    }
-    // Restart wake word listening
-    if (this.assistantActive) {
-      this.updateStatus('Listening for wake word...');
-      this.startWakeWordMode();
+    
+    try {
+      const llmResponse = await this.processWithLLM(command, {});
+      
+      // Check for destination change before speaking
+      if (llmResponse && llmResponse.destinationChange) {
+        this.updateStatus(`Changing destination to ${llmResponse.destinationChange}...`);
+        
+        // Play a special confirmation sound for destination changes
+        this.playSound('/sounds/navigation-update.mp3', 0.5);
+        
+        // Add a small delay to let the map update before speaking
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
+      // Speak the response
+      if (llmResponse && llmResponse.response) {
+        this.updateStatus('Speaking response...');
+        await new Promise<void>(resolve => this.speak(llmResponse.response, resolve));
+      }
+    } catch (error) {
+      console.error('Error in command cycle:', error);
+      this.speak("Sorry, I encountered an error processing your request. Please try again.", () => {});
+    } finally {
+      // Restart wake word listening
+      if (this.assistantActive) {
+        this.updateStatus('Listening for wake word...');
+        this.startWakeWordMode();
+      }
     }
   }
 
@@ -470,6 +499,16 @@ class VoiceService {
       this.updateStatus('Listening for command...');
       const command = await this.listenWithSilenceTimeout(5000);
       
+      // Validate command
+      if (!command || command.trim().length < 2) {
+        this.updateStatus('No clear command detected');
+        await new Promise<void>((resolve) => {
+          this.speak("I didn't catch that. Please try again.", resolve);
+        });
+        this.updateStatus('Idle');
+        return false;
+      }
+      
       // Step 3: Process command with LLM
       this.updateStatus('Processing your request...');
       this.state.isProcessing = true;
@@ -498,6 +537,17 @@ class VoiceService {
       });
       
       this.state.isProcessing = false;
+      
+      // Check for destination change
+      if (llmResponse && llmResponse.destinationChange) {
+        this.updateStatus(`Changing destination to ${llmResponse.destinationChange}...`);
+        
+        // Play a special confirmation sound for destination changes
+        this.playSound('/sounds/navigation-update.mp3', 0.5);
+        
+        // Add a small delay to let the map update before speaking
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
       
       // Step 4: Speak the response
       if (llmResponse && llmResponse.response) {
@@ -620,12 +670,24 @@ class VoiceService {
    */
   public async processWithLLM(command: string, additionalContext: any = {}): Promise<LLMResponse> {
     try {
+      // Safety check for empty command
+      if (!command || command.trim() === '') {
+        console.warn('Empty command received in processWithLLM');
+        return {
+          response: 'I didn\'t catch that. Could you please repeat?',
+          status: 'error'
+        };
+      }
+
       // Create context object with conversation state and additional context
       const contextData = {
         ...additionalContext,
         session_id: this.state.currentSessionId,
         context: "navigation"
       };
+
+      console.log('Processing command:', command);
+      console.log('With context:', JSON.stringify(contextData, null, 2));
 
       // Attempt direct FastAPI LLM endpoint
       const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
@@ -635,13 +697,27 @@ class VoiceService {
 
       let response: Response;
       let usedBackend = true;
+      let errorDetails = '';
 
       try {
+        console.log('Requesting backend API:', llmUrl);
+        const postData = { query: command, context: contextData };
+        console.log('Request data:', JSON.stringify(postData, null, 2));
+        
         response = await fetch(llmUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: command, context: contextData }),
+          body: JSON.stringify(postData),
         });
+        
+        if (!response.ok) {
+          try {
+            errorDetails = await response.text();
+            console.error('Backend API error response:', errorDetails);
+          } catch (e) {
+            console.error('Could not read error response text', e);
+          }
+        }
       } catch (err) {
         console.warn('Direct backend LLM fetch error, falling back to Next.js API:', err);
         usedBackend = false;
@@ -653,23 +729,67 @@ class VoiceService {
       }
 
       if (!response.ok) {
-        console.warn('Direct backend LLM returned status', response.status, 'falling back to Next.js API');
-        usedBackend = false;
-        response = await fetch('/api/llm', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: command, sessionId: this.state.currentSessionId }),
-        });
+        if (usedBackend) {
+          console.warn('Direct backend LLM returned status', response.status, 'falling back to Next.js API');
+          console.warn('Error details:', errorDetails);
+          usedBackend = false;
+          
+          // Simplify the request for fallback
+          const fallbackData = { 
+            query: command.substring(0, 200), // Limit query length for fallback
+            sessionId: this.state.currentSessionId 
+          };
+          console.log('Fallback request:', JSON.stringify(fallbackData, null, 2));
+          
+          response = await fetch('/api/llm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(fallbackData),
+          });
+        }
       }
 
       if (!response.ok) {
-        throw new Error(`Failed to get LLM response after fallback: ${response.status}`);
+        // Try to get error details
+        let finalErrorDetails = '';
+        try {
+          finalErrorDetails = await response.text();
+        } catch (e) {
+          console.error('Could not read final error response', e);
+        }
+
+        throw new Error(`Failed to get LLM response after fallback: ${response.status} - ${finalErrorDetails}`);
       }
 
       const data = await response.json();
+      console.log('LLM API response:', JSON.stringify(data, null, 2));
+      
       // If used Next.js API, newSessionId is in data.sessionId
       if (!usedBackend && data.sessionId) {
         this.state.currentSessionId = data.sessionId;
+      }
+
+      // Check for destination change instruction
+      let destChange: string | undefined = data.metadata?.destination_change;
+      
+      // If no destination_change in metadata, check response text for the trigger phrase
+      if (!destChange && data.response) {
+        const lowerResponse = data.response.toLowerCase();
+        // Check for both formats of the trigger phrase
+        const triggers = ["okay, changing destination to", "okay changing destination to"];
+        for (const trigger of triggers) {
+          if (lowerResponse.includes(trigger)) {
+            // Extract destination from the response text
+            const startIndex = lowerResponse.indexOf(trigger) + trigger.length;
+            destChange = data.response.substring(startIndex).trim();
+            break;
+          }
+        }
+      }
+      
+      if (destChange && this.changeDestinationCallback) {
+        console.log("Detected destination change to:", destChange);
+        this.changeDestinationCallback(destChange);
       }
       
       return {
@@ -677,12 +797,13 @@ class VoiceService {
         action: data.action,
         params: data.params,
         sessionId: data.metadata?.session_id,
-        status: data.status
+        status: data.status,
+        destinationChange: destChange
       };
     } catch (error) {
       console.error('Error processing with LLM:', error);
       return {
-        response: 'Sorry, there was an error connecting to the AI assistant.',
+        response: 'Sorry, there was an error connecting to the AI assistant. Please check your internet connection and try again.',
         status: 'error'
       };
     }
@@ -819,6 +940,11 @@ class VoiceService {
       recognition.start();
       this.state.isListening = true;
     });
+  }
+
+  /** Register a callback to handle destination changes signaled by the LLM */
+  public setChangeDestinationCallback(callback: (destination: string) => void): void {
+    this.changeDestinationCallback = callback;
   }
 }
 
